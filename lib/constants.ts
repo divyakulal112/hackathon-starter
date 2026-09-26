@@ -131,6 +131,8 @@ export const STORAGE_KEYS = {
   demoState: "kisansync_shared_state",
   /** Active role ("farmer" | "centre") for the landing switcher. */
   role: "kisansync_role",
+  /** SMS outbox when running on Supabase (SMS stays client-local in both modes). */
+  smsOutbox: "kisansync_sms_outbox",
 } as const;
 
 // ---------------------------------------------------------------------------

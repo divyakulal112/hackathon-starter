@@ -3,12 +3,15 @@
 /**
  * AppStateContext — single source of truth for the demo.
  *
- * Holds centres, appointments and the SMS outbox. Every mutation is
- * persisted to localStorage and broadcast to other tabs, so the farmer
- * dashboard and centre dashboard (opened side by side) stay in sync.
+ * Holds centres, appointments and the SMS outbox. The public API is unchanged
+ * from the localStorage-only demo; persistence now goes through the DataSource
+ * seam (lib/data):
+ *   - local mode    → localStorage blob + `storage` events (original behavior).
+ *   - supabase mode → PostgreSQL rows + realtime (two-window demo syncs across
+ *                     devices; SMS stays client-local per the approved plan).
  *
- * When Supabase is wired up, replace the persistence layer here with
- * table reads/writes — the UI components do not need to change.
+ * The recommendation engine and UI components never import Supabase — they
+ * keep consuming plain Centre/Appointment data from this context.
  */
 
 import {
@@ -17,6 +20,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -30,10 +34,10 @@ import type {
 import {
   CROP_RATES_INR_PER_QUINTAL,
   DEMO_FARMER,
-  STORAGE_KEYS,
   TRACKING_STAGES,
 } from "@/lib/constants";
 import { MOCK_APPOINTMENTS, MOCK_CENTRES } from "@/lib/mockData";
+import { getDataSource } from "@/lib/data";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -106,30 +110,6 @@ function makeSms(partial: Omit<SmsMessage, "id" | "createdAt">): SmsMessage {
   };
 }
 
-interface StoredState {
-  centres: Centre[];
-  appointments: Appointment[];
-  sms: SmsMessage[];
-}
-
-function readLocalState(): StoredState | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.demoState);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredState>;
-    if (!Array.isArray(parsed.centres) || !Array.isArray(parsed.appointments)) {
-      return null;
-    }
-    return {
-      centres: parsed.centres,
-      appointments: parsed.appointments,
-      sms: Array.isArray(parsed.sms) ? parsed.sms : [],
-    };
-  } catch {
-    return null;
-  }
-}
-
 /** Status flow used by "advance" — mirrors CENTRE_STATUS_FLOW order. */
 const STATUS_FLOW: AppointmentStatus[] = [
   "slot_booked",
@@ -140,6 +120,14 @@ const STATUS_FLOW: AppointmentStatus[] = [
   "payment_initiated",
   "payment_received",
 ];
+
+function freshSeedSnapshot() {
+  return {
+    centres: MOCK_CENTRES.map((c) => ({ ...c })),
+    appointments: MOCK_APPOINTMENTS.map((a) => ({ ...a })),
+    smsOutbox: [] as SmsMessage[],
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -153,49 +141,75 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [usingCachedData, setUsingCachedData] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
-  // ---- Hydrate from localStorage after mount (SSR-safe).
-  useEffect(() => {
-    const local = readLocalState();
-    if (local) {
-      setCentres(local.centres);
-      setAppointments(local.appointments);
-      setSmsOutbox(local.sms);
-    }
-    setHydrated(true);
-  }, []);
+  // The data source is resolved once per browser session (see lib/data).
+  const sourceRef = useRef(getDataSource());
+  // Latest state, so async callbacks (subscribe / fire-and-forget writes)
+  // always observe the current snapshot without re-subscribing.
+  const stateRef = useRef({ centres, appointments, smsOutbox });
+  stateRef.current = { centres, appointments, smsOutbox };
 
-  // ---- Persist live state + refresh the offline centre cache.
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.localStorage.setItem(
-        STORAGE_KEYS.demoState,
-        JSON.stringify({ centres, appointments, sms: smsOutbox }),
-      );
-      window.localStorage.setItem(
-        STORAGE_KEYS.cachedCentres,
-        JSON.stringify(centres),
-      );
-    } catch {
-      // quota/blocked storage — demo continues in memory
-    }
-  }, [centres, appointments, smsOutbox, hydrated]);
+  const snapshot = useCallback(
+    () => ({
+      centres: stateRef.current.centres,
+      appointments: stateRef.current.appointments,
+      smsOutbox: stateRef.current.smsOutbox,
+    }),
+    [],
+  );
 
-  // ---- Cross-tab sync so farmer + centre dashboards can run side by side.
+  // ---- Hydrate after mount (SSR-safe): local blob or Supabase tables.
   useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key !== STORAGE_KEYS.demoState || !e.newValue) return;
+    let cancelled = false;
+    const source = sourceRef.current;
+
+    async function hydrate() {
       try {
-        const parsed = JSON.parse(e.newValue) as Partial<StoredState>;
-        if (Array.isArray(parsed.centres)) setCentres(parsed.centres);
-        if (Array.isArray(parsed.appointments)) setAppointments(parsed.appointments);
-        if (Array.isArray(parsed.sms)) setSmsOutbox(parsed.sms);
-      } catch {
-        // ignore malformed payloads
+        const loaded = await source.load();
+        if (cancelled) return;
+        if (loaded) {
+          // Supabase mode with an unseeded project: keep the mock seeds so the
+          // demo still renders; resetDemoData will seed the DB on demand.
+          const empty =
+            loaded.centres.length === 0 && loaded.appointments.length === 0;
+          if (!empty) {
+            setCentres(loaded.centres);
+            setAppointments(loaded.appointments);
+            setSmsOutbox(loaded.smsOutbox);
+          } else if (source.kind === "supabase") {
+            console.warn(
+              "[KisanSync] Supabase tables are empty — showing seed data. " +
+                "Run supabase/seed.sql to persist the demo dataset.",
+            );
+          }
+        }
+      } catch (err) {
+        console.error("[KisanSync] data source load failed; using seed data", err);
+        setUsingCachedData(true);
+      } finally {
+        if (!cancelled) setHydrated(true);
       }
     }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ---- Persist the parts of the snapshot this source owns.
+  useEffect(() => {
+    if (!hydrated) return;
+    sourceRef.current.persist({ centres, appointments, smsOutbox });
+  }, [centres, appointments, smsOutbox, hydrated]);
+
+  // ---- Change feed: cross-tab storage events (local) or realtime (Supabase).
+  useEffect(() => {
+    const unsubscribe = sourceRef.current.subscribe((next) => {
+      setCentres(next.centres);
+      setAppointments(next.appointments);
+      setSmsOutbox(next.smsOutbox);
+    });
+    return unsubscribe;
   }, []);
 
   // ---- Browser online/offline events.
@@ -209,6 +223,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("offline", update);
     };
   }, []);
+
+  // ---- Backend writes (fire-and-forget with logged failures). The UI stays
+  // optimistic; in Supabase mode realtime refetches reconcile remote truth.
+  const persistBooking = useCallback(
+    (appointment: Appointment, centreAfter: Centre, request: ProcurementRequest) => {
+      void sourceRef.current
+        .bookToken({ centreId: appointment.centreId, request, appointment, centreAfter })
+        .catch((err) =>
+          console.error("[KisanSync] bookToken persist failed", err),
+        );
+    },
+    [],
+  );
 
   // ---- Farmer actions ----------------------------------------------------
 
@@ -240,15 +267,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         ),
       };
 
+      const centreAfter: Centre = {
+        ...centre,
+        bookedToday: centre.bookedToday + 1,
+        queueCount: centre.queueCount + 1,
+      };
+
       setAppointments((prev) => [...prev, appointment]);
 
       // Centre load reflects the new booking immediately.
       setCentres((prev) =>
-        prev.map((c) =>
-          c.id === centre.id
-            ? { ...c, bookedToday: c.bookedToday + 1, queueCount: c.queueCount + 1 }
-            : c,
-        ),
+        prev.map((c) => (c.id === centre.id ? centreAfter : c)),
       );
 
       setSmsOutbox((prev) => [
@@ -261,18 +290,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }),
       ]);
 
+      persistBooking(appointment, centreAfter, input.request);
+
       return appointment;
     },
-    [centres, appointments],
+    [centres, appointments, persistBooking],
   );
 
   const cancelBooking = useCallback((appointmentId: string) => {
     setAppointments((prev) =>
-      prev.map((a) =>
-        a.id === appointmentId
-          ? { ...a, status: "cancelled" as const, stageIndex: 7 }
-          : a,
-      ),
+      prev.map((a) => {
+        if (a.id !== appointmentId) return a;
+        const updated: Appointment = {
+          ...a,
+          status: "cancelled" as const,
+          stageIndex: 7,
+        };
+        void sourceRef.current
+          .updateAppointmentStatus(updated)
+          .catch((err) =>
+            console.error("[KisanSync] cancelBooking persist failed", err),
+          );
+        return updated;
+      }),
     );
   }, []);
 
@@ -288,12 +328,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ? `PAY-${target.tokenNumber.replace("KS-", "")}-${new Date().getFullYear()}`
           : target.paymentRef;
 
+      const updated: Appointment = {
+        ...target,
+        status,
+        stageIndex: stageIndexForStatus(status),
+        paymentRef,
+      };
+
       setAppointments((prev) =>
-        prev.map((a) =>
-          a.id === appointmentId
-            ? { ...a, status, stageIndex: stageIndexForStatus(status), paymentRef }
-            : a,
-        ),
+        prev.map((a) => (a.id === appointmentId ? updated : a)),
       );
 
       setSmsOutbox((prev) => [
@@ -307,6 +350,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           paymentRef,
         }),
       ]);
+
+      void sourceRef.current
+        .updateAppointmentStatus(updated)
+        .catch((err) =>
+          console.error("[KisanSync] status persist failed", err),
+        );
     },
     [appointments],
   );
@@ -325,12 +374,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ? `PAY-${target.tokenNumber.replace("KS-", "")}-${new Date().getFullYear()}`
           : target.paymentRef;
 
+      const updated: Appointment = {
+        ...target,
+        status: next,
+        stageIndex: stageIndexForStatus(next),
+        paymentRef,
+      };
+
       setAppointments((prev) =>
-        prev.map((a) =>
-          a.id === appointmentId
-            ? { ...a, status: next, stageIndex: stageIndexForStatus(next), paymentRef }
-            : a,
-        ),
+        prev.map((a) => (a.id === appointmentId ? updated : a)),
       );
 
       setSmsOutbox((prev) => [
@@ -344,29 +396,50 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           paymentRef,
         }),
       ]);
+
+      void sourceRef.current
+        .updateAppointmentStatus(updated)
+        .catch((err) =>
+          console.error("[KisanSync] advance persist failed", err),
+        );
     },
     [appointments],
   );
 
   const surgeQueue = useCallback((centreId: string, add: number) => {
+    // Compute from the ref (not inside the setState updater) so the backend
+    // write fires exactly once per user action, even under StrictMode.
+    const target = stateRef.current.centres.find((c) => c.id === centreId);
+    if (!target) return;
+    const newQueueCount = Math.max(0, target.queueCount + add);
     setCentres((prev) =>
       prev.map((c) =>
-        c.id === centreId
-          ? { ...c, queueCount: Math.max(0, c.queueCount + add) }
-          : c,
+        c.id === centreId ? { ...c, queueCount: newQueueCount } : c,
       ),
     );
+    void sourceRef.current
+      .surgeQueue(centreId, newQueueCount)
+      .catch((err) =>
+        console.error("[KisanSync] surgeQueue persist failed", err),
+      );
   }, []);
 
   /**
    * Full demo reset — restores seed centres (queue + capacity + bookedToday),
    * seed appointments and clears the SMS outbox. Repeatable: every call
-   * re-clones the pristine seed constants.
+   * re-clones the pristine seed constants. In Supabase mode it also re-seeds
+   * the database.
    */
   const resetDemoData = useCallback(() => {
-    setCentres(MOCK_CENTRES.map((c) => ({ ...c })));
-    setAppointments(MOCK_APPOINTMENTS.map((a) => ({ ...a })));
+    const seed = freshSeedSnapshot();
+    setCentres(seed.centres);
+    setAppointments(seed.appointments);
     setSmsOutbox([]);
+    void sourceRef.current
+      .resetDemoData({ centres: seed.centres, appointments: seed.appointments, smsOutbox: [] })
+      .catch((err) =>
+        console.error("[KisanSync] resetDemoData persist failed", err),
+      );
   }, []);
 
   /** Kept for backwards compatibility — delegates to the full reset. */
@@ -376,9 +449,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const archiveAppointment = useCallback((appointmentId: string) => {
     setAppointments((prev) =>
-      prev.map((a) =>
-        a.id === appointmentId ? { ...a, archived: true } : a,
-      ),
+      prev.map((a) => {
+        if (a.id !== appointmentId) return a;
+        const updated: Appointment = { ...a, archived: true };
+        void sourceRef.current
+          .archiveAppointment(updated)
+          .catch((err) =>
+            console.error("[KisanSync] archive persist failed", err),
+          );
+        return updated;
+      }),
     );
   }, []);
 
