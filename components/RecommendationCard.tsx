@@ -35,7 +35,7 @@ export default function RecommendationCard({
   return (
     <section
       aria-label={t("recommendedForYou")}
-      className="rounded-2xl border-2 border-emerald-600 bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-5 text-white shadow-xl"
+      className="rounded-2xl border-2 border-emerald-600 bg-linear-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-5 text-white shadow-xl"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-200 border border-emerald-400/30">
