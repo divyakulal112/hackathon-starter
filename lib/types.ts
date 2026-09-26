@@ -13,8 +13,11 @@ export type CentreStatus = "optimal" | "busy" | "congested";
 export interface Centre {
   id: string;
   name: string;
-  /** Distance from the demo farmer's location, in km. */
-  distanceKm: number;
+  /** District / city the centre operates in (display + grouping). */
+  district: string;
+  /** Centre geo-coordinate — used with the farmer's location for haversine. */
+  latitude: number;
+  longitude: number;
   /** Farmers currently waiting in the live queue. */
   queueCount: number;
   /** Farmers the centre can process per hour (simulated operational data). */
@@ -33,8 +36,22 @@ export interface Centre {
 }
 
 // ---------------------------------------------------------------------------
-// Farmer + request
+// Farmer location + request
 // ---------------------------------------------------------------------------
+
+/**
+ * A structured, geocoded farmer location (village/town/city).
+ * Selected from a list in the request form so the engine receives real
+ * coordinates instead of free text — this is what makes recommendations
+ * location-aware.
+ */
+export interface FarmerLocation {
+  id: string;
+  name: string;
+  district: string;
+  latitude: number;
+  longitude: number;
+}
 
 /** The ten supported crop types (labels shown verbatim in the UI). */
 export type Crop =
@@ -52,16 +69,21 @@ export type Crop =
 export interface Farmer {
   id: string;
   name: string;
-  /** Free-text village/taluk location used for distance checks. */
+  /** Free-text village/taluk location used for display (derived from locationId). */
   village: string;
 }
 
 export interface ProcurementRequest {
   crop: Crop;
   quantityQuintals: number;
+  /** Human-readable location name kept for appointment records/SMS. */
   village: string;
-  /** "morning" | "afternoon" | "evening" — preferred arrival period. */
+  /** References a FarmerLocation — the source of truth for distance math. */
+  locationId: string;
+  /** Preferred arrival period (morning/afternoon/evening). */
   preferredTime: PreferredTime;
+  /** Preferred procurement date (ISO yyyy-mm-dd, optional — display only in demo). */
+  preferredDate?: string;
 }
 
 export type PreferredTime = "morning" | "afternoon" | "evening";
@@ -120,9 +142,25 @@ export interface CentreScore {
   totalScore: number;
 }
 
+/**
+ * One "why this centre?" checklist row. `key` is a translation key;
+ * `detail` is pre-formatted data (never translated) that backs the claim.
+ */
+export interface WhyChecklistItem {
+  key: string;
+  passed: boolean;
+  detail?: string;
+}
+
 export interface CentreEvaluation {
   centre: Centre;
   eligibility: CentreEligibility;
+  /** Distance from the farmer's selected location, km (haversine, 1 decimal). */
+  distanceKm: number;
+  /** True when distanceKm ≤ SERVICE_RADIUS_KM. */
+  withinServiceArea: boolean;
+  /** Percentage of daily capacity already used. */
+  capacityPct: number;
   estimatedWaitMinutes: number;
   remainingCapacity: number;
   /** ISO-style "HH:mm" recommended arrival start. */
@@ -133,6 +171,8 @@ export interface CentreEvaluation {
   score: CentreScore;
   /** Per-factor explanation lines for transparency. */
   reasons: string[];
+  /** Data-backed "why this centre?" checklist. */
+  checklist: WhyChecklistItem[];
 }
 
 /**
@@ -158,9 +198,20 @@ export interface ExplanationFragments {
 }
 
 export interface RecommendationResult {
+  /**
+   * The recommended centre — ONLY ever a centre that accepts the crop AND
+   * sits within the service radius. Null when no in-area eligible centre
+   * exists (the UI then shows alternatives, never a fake recommendation).
+   */
   best: CentreEvaluation | null;
   /** All centres evaluated, sorted best-first (ineligible last). */
   evaluations: CentreEvaluation[];
+  /** Other eligible centres (excluding best), best-first — capped for UI. */
+  alternatives: CentreEvaluation[];
+  /** True only when a valid in-area recommendation exists. */
+  withinServiceArea: boolean;
+  /** The farmer location the evaluation was computed against. */
+  farmerLocation: FarmerLocation;
   /** English fallback explanation (use explanationFragments + composeExplanation for localized text). */
   explanation: string;
   /** Translation-key fragments for language-aware composition in the UI. */
@@ -185,4 +236,3 @@ export interface SmsMessage {
   amountInr?: number;
   paymentRef?: string;
 }
-

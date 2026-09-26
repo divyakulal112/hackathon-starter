@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MessageSquareText, Sprout } from "lucide-react";
+import { MessageSquareText, Sprout, MapPin, AlertCircle, Compass } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import RecommendationCard from "@/components/RecommendationCard";
 import CentreCard from "@/components/CentreCard";
@@ -15,7 +15,13 @@ import {
   calculateCentreRecommendation,
   composeExplanation,
 } from "@/lib/recommendationEngine";
-import { DEMO_CROPS, DEMO_FARMER_PROFILE } from "@/lib/mockData";
+import {
+  DEFAULT_LOCATION_ID,
+  DEMO_CROPS,
+  DEMO_FARMER_PROFILE,
+  MOCK_LOCATIONS,
+  getFarmerLocation,
+} from "@/lib/mockData";
 import { DEMO_FARMER } from "@/lib/constants";
 import type {
   Appointment,
@@ -37,23 +43,30 @@ export default function FarmerDashboard() {
     archiveAppointment,
   } = useAppState();
 
+  const initialLocation = getFarmerLocation(DEFAULT_LOCATION_ID);
+
   const [request, setRequest] = useState<ProcurementRequest>({
     crop: "Paddy / Rice",
-    quantityQuintals: 15,
-    village: DEMO_FARMER.village,
+    quantityQuintals: 4, // 4 quintals = 400 kg
+    village: initialLocation.name,
+    locationId: initialLocation.id,
     preferredTime: "afternoon",
   });
   const [bookingTarget, setBookingTarget] = useState<CentreEvaluation | null>(null);
   const [smsOpen, setSmsOpen] = useState(false);
 
-  // ---- Coordination Engine output (recomputed on every data change) ----
+  // ---- Location-Aware Coordination Engine output (recomputed reactively) ----
   const recommendation = useMemo(
     () => calculateCentreRecommendation(request, centres),
     [request, centres],
   );
 
+  const selectedLocation = useMemo(
+    () => getFarmerLocation(request.locationId),
+    [request.locationId],
+  );
+
   // The demo farmer's most recent live (non-archived) appointment.
-  // Archived appointments keep centre history but unlock the request form.
   const myAppointment: Appointment | undefined = useMemo(
     () =>
       appointments
@@ -91,36 +104,45 @@ export default function FarmerDashboard() {
     archiveAppointment(myAppointment.id);
   }
 
+  // Separate centres into in-service-area vs alternatives
+  const inAreaCentres = recommendation.evaluations.filter((e) => e.withinServiceArea);
+  const otherCentres = recommendation.evaluations.filter((e) => !e.withinServiceArea);
+
   return (
-    <div className="min-h-svh pb-24">
+    <div className="min-h-svh pb-24 bg-gray-50/50">
       <AppHeader />
 
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-4">
-        {/* Farmer identity */}
-        <section className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-            <Sprout className="h-6 w-6" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold text-gray-900">
-              {DEMO_FARMER_PROFILE.name}
-            </h1>
-            <p className="truncate text-sm text-gray-500">
-              {DEMO_FARMER_PROFILE.village}
-            </p>
+        {/* Farmer identity & location banner */}
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-xs">
+          <div className="flex items-center gap-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 font-bold shadow-xs">
+              <Sprout className="h-6 w-6" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold text-gray-900">
+                {DEMO_FARMER_PROFILE.name}
+              </h1>
+              <p className="flex items-center gap-1 truncate text-xs font-semibold text-emerald-800">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                {selectedLocation.name}, {selectedLocation.district}
+              </p>
+            </div>
+          </div>
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs text-emerald-800 font-semibold flex items-center gap-1.5">
+            <Compass className="h-4 w-4 text-emerald-600" />
+            <span>25 km {t("checklistWithinServiceArea")}</span>
           </div>
         </section>
 
-        {/* Offline notice for actions (banner itself lives in the header) */}
-
-        {/* Procurement request */}
+        {/* Procurement request form */}
         <RequestForm
           request={request}
           onChange={setRequest}
           disabled={Boolean(myAppointment)}
         />
 
-        {/* Recommendation (hidden while a token is active to keep focus) */}
+        {/* Recommended Centre Card (hidden while a token is active) */}
         {!myAppointment && recommendation.best && (
           <RecommendationCard
             best={recommendation.best}
@@ -129,14 +151,36 @@ export default function FarmerDashboard() {
           />
         )}
 
-        {/* Nearby centres */}
+        {/* If no centre in service radius accepts this crop */}
+        {!myAppointment && !recommendation.best && (
+          <section className="rounded-2xl border-2 border-amber-300 bg-amber-50/70 p-5 text-amber-900 shadow-xs">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-6 w-6 shrink-0 text-amber-600 mt-0.5" />
+              <div>
+                <h2 className="text-base font-bold text-amber-950">
+                  {t("noEligibleInRadius")}
+                </h2>
+                <p className="mt-1 text-sm text-amber-800">
+                  {t("locationRadiusNote")}
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Nearby Centres within Service Area */}
         {!myAppointment && (
           <section aria-label={t("nearbyCentres")}>
-            <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-gray-500">
-              {t("nearbyCentres")}
-            </h2>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-gray-600">
+                {t("nearbyCentres")} ({inAreaCentres.length})
+              </h2>
+              <span className="text-xs text-gray-500 font-medium">
+                {t("locationRadiusNote")}
+              </span>
+            </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {recommendation.evaluations.map((ev) => (
+              {inAreaCentres.map((ev) => (
                 <CentreCard
                   key={ev.centre.id}
                   evaluation={ev}
@@ -148,84 +192,101 @@ export default function FarmerDashboard() {
           </section>
         )}
 
-        {/* Active booking + tracking */}
-        {myAppointment && (
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                      {t("yourToken")}
-                    </p>
-                    <p className="text-2xl font-extrabold text-gray-900">
-                      {myAppointment.tokenNumber}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      {myAppointment.crop} · {myAppointment.quantityQuintals} {t("quintals")}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      {myAppointment.centreName} · {myAppointment.arrivalWindow}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">{t("estimatedAmount")}</p>
-                    <p className="text-lg font-bold text-gray-900">
-                      ₹{myAppointment.estimatedAmountInr.toLocaleString("en-IN")}
-                    </p>
-                    {myAppointment.paymentRef && (
-                      <p className="text-xs text-gray-500">
-                        {t("paymentRef")}: {myAppointment.paymentRef}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <h2 className="mt-4 mb-3 text-sm font-bold uppercase tracking-wider text-gray-500">
-                  {t("procurementTracker")}
-                </h2>
-                <TrackingStepper
-                  stageIndex={myAppointment.stageIndex}
-                  cancelled={myAppointment.status === "cancelled"}
+        {/* Alternative Centres beyond service radius */}
+        {!myAppointment && otherCentres.length > 0 && (
+          <section aria-label={t("alternativeCentres")} className="pt-2">
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-500">
+              {t("alternativeCentres")} (&gt;25 km)
+            </h2>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {otherCentres.map((ev) => (
+                <CentreCard
+                  key={ev.centre.id}
+                  evaluation={ev}
+                  recommended={false}
+                  onSelect={() => setBookingTarget(ev)}
                 />
+              ))}
+            </div>
+          </section>
+        )}
 
-                <button
-                  type="button"
-                  onClick={() => advanceAppointment(myAppointment.id)}
-                  disabled={allStagesDone}
-                  className="mt-2 min-h-12 w-full rounded-xl bg-emerald-600 px-4 font-bold text-white hover:bg-emerald-700 active:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-                >
-                  {t("nextStage")}
-                </button>
-                <p className="mt-1.5 text-center text-xs text-gray-500">
-                  {t("congestionNote")}
+        {/* Active booking + tracking stepper */}
+        {myAppointment && (
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+                  {t("yourToken")}
                 </p>
-                {allStagesDone && (
-                  <button
-                    type="button"
-                    onClick={startNewRequest}
-                    className="mt-2 min-h-12 w-full rounded-xl border border-emerald-600 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200"
-                  >
-                    {t("startNewRequest")}
-                  </button>
+                <p className="text-3xl font-black text-gray-900 tracking-tight">
+                  {myAppointment.tokenNumber}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-gray-700">
+                  {myAppointment.crop} · {myAppointment.quantityQuintals} {t("quintals")}
+                </p>
+                <p className="text-xs text-gray-500 font-medium">
+                  {myAppointment.centreName} · {myAppointment.arrivalWindow}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-semibold text-gray-500">{t("estimatedAmount")}</p>
+                <p className="text-2xl font-extrabold text-emerald-700">
+                  ₹{myAppointment.estimatedAmountInr.toLocaleString("en-IN")}
+                </p>
+                {myAppointment.paymentRef && (
+                  <p className="text-xs font-mono font-bold text-gray-500 mt-0.5">
+                    {t("paymentRef")}: {myAppointment.paymentRef}
+                  </p>
                 )}
-                {!allStagesDone && (
-                  <CancelBookingButton
-                    onConfirm={() => cancelBooking(myAppointment.id)}
-                  />
-                )}
-              </>
+              </div>
+            </div>
+
+            <h2 className="mt-4 mb-3 text-sm font-bold uppercase tracking-wider text-gray-600">
+              {t("procurementTracker")}
+            </h2>
+            <TrackingStepper
+              stageIndex={myAppointment.stageIndex}
+              cancelled={myAppointment.status === "cancelled"}
+            />
+
+            <button
+              type="button"
+              onClick={() => advanceAppointment(myAppointment.id)}
+              disabled={allStagesDone}
+              className="mt-4 min-h-12 w-full rounded-xl bg-emerald-600 px-4 font-extrabold text-white shadow-xs hover:bg-emerald-700 active:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300 transition-colors"
+            >
+              {t("nextStage")}
+            </button>
+            <p className="mt-2 text-center text-xs text-gray-500">
+              {t("congestionNote")}
+            </p>
+            {allStagesDone && (
+              <button
+                type="button"
+                onClick={startNewRequest}
+                className="mt-3 min-h-12 w-full rounded-xl border-2 border-emerald-600 bg-emerald-50 px-4 text-sm font-extrabold text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200 transition-colors"
+              >
+                {t("startNewRequest")}
+              </button>
+            )}
+            {!allStagesDone && (
+              <CancelBookingButton
+                onConfirm={() => cancelBooking(myAppointment.id)}
+              />
+            )}
           </section>
         )}
       </main>
 
-      {/* Floating SMS button */}
+      {/* Floating SMS simulator button */}
       <button
         type="button"
         onClick={() => setSmsOpen(true)}
-        className="fixed bottom-4 right-4 z-30 min-h-12 rounded-full bg-gray-900 px-5 py-3 text-sm font-bold text-white shadow-lg hover:bg-gray-800"
+        className="fixed bottom-4 right-4 z-30 min-h-12 rounded-full bg-gray-900 px-5 py-3 text-sm font-bold text-white shadow-xl hover:bg-gray-800 active:scale-95 transition-all"
       >
         <span className="inline-flex items-center gap-2">
-          <MessageSquareText className="h-4 w-4" />
+          <MessageSquareText className="h-4 w-4 text-emerald-400" />
           {t("viewSms")}
         </span>
       </button>
@@ -249,7 +310,7 @@ export default function FarmerDashboard() {
 }
 
 // ---------------------------------------------------------------------------
-// Request form
+// Request form with location selection
 // ---------------------------------------------------------------------------
 
 function RequestForm({
@@ -264,20 +325,47 @@ function RequestForm({
   const { t } = useLanguage();
 
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">
+    <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-xs">
+      <h2 className="text-sm font-bold uppercase tracking-wider text-gray-600">
         {t("yourRequest")}
       </h2>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-3 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Location selector */}
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-gray-600">
+          <span className="mb-1 block text-xs font-bold text-gray-700">
+            {t("selectLocation")}
+          </span>
+          <select
+            value={request.locationId}
+            disabled={disabled}
+            onChange={(e) => {
+              const loc = getFarmerLocation(e.target.value);
+              onChange({
+                ...request,
+                locationId: loc.id,
+                village: loc.name,
+              });
+            }}
+            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-semibold text-gray-900 disabled:bg-gray-100 shadow-2xs focus:border-emerald-600 focus:outline-hidden"
+          >
+            {MOCK_LOCATIONS.map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.name} ({loc.district})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* Crop selector */}
+        <label className="block">
+          <span className="mb-1 block text-xs font-bold text-gray-700">
             {t("crop")}
           </span>
           <select
             value={request.crop}
             disabled={disabled}
             onChange={(e) => onChange({ ...request, crop: e.target.value as Crop })}
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 disabled:bg-gray-100"
+            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-semibold text-gray-900 disabled:bg-gray-100 shadow-2xs focus:border-emerald-600 focus:outline-hidden"
           >
             {DEMO_CROPS.map((c) => (
               <option key={c} value={c}>
@@ -287,8 +375,9 @@ function RequestForm({
           </select>
         </label>
 
+        {/* Quantity selector */}
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-gray-600">
+          <span className="mb-1 block text-xs font-bold text-gray-700">
             {t("quantity")} ({t("quintals")})
           </span>
           <input
@@ -303,25 +392,13 @@ function RequestForm({
                 quantityQuintals: Math.max(1, Number(e.target.value) || 1),
               })
             }
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 disabled:bg-gray-100"
+            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-semibold text-gray-900 disabled:bg-gray-100 shadow-2xs focus:border-emerald-600 focus:outline-hidden"
           />
         </label>
 
+        {/* Preferred time selector */}
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-gray-600">
-            {t("village")}
-          </span>
-          <input
-            type="text"
-            value={request.village}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...request, village: e.target.value })}
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 disabled:bg-gray-100"
-          />
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-gray-600">
+          <span className="mb-1 block text-xs font-bold text-gray-700">
             {t("preferredTime")}
           </span>
           <select
@@ -330,7 +407,7 @@ function RequestForm({
             onChange={(e) =>
               onChange({ ...request, preferredTime: e.target.value as PreferredTime })
             }
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 disabled:bg-gray-100"
+            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-semibold text-gray-900 disabled:bg-gray-100 shadow-2xs focus:border-emerald-600 focus:outline-hidden"
           >
             <option value="morning">{t("morning")}</option>
             <option value="afternoon">{t("afternoon")}</option>
@@ -339,7 +416,7 @@ function RequestForm({
         </label>
       </div>
       {disabled && (
-        <p className="mt-2 text-xs font-semibold text-emerald-700">
+        <p className="mt-2.5 text-xs font-bold text-emerald-700">
           {t("alreadyBooked")} — {t("viewTracking")}
         </p>
       )}
@@ -348,7 +425,7 @@ function RequestForm({
 }
 
 // ---------------------------------------------------------------------------
-// Cancel booking (two-tap confirm — stage 8 of the tracker)
+// Cancel booking
 // ---------------------------------------------------------------------------
 
 function CancelBookingButton({ onConfirm }: { onConfirm: () => void }) {
@@ -364,15 +441,13 @@ function CancelBookingButton({ onConfirm }: { onConfirm: () => void }) {
           setArmed(false);
         } else {
           setArmed(true);
-          // Auto-disarm so a stray tap can't leave a destructive button hot.
           window.setTimeout(() => setArmed(false), 3000);
         }
       }}
-      className={`mt-2 min-h-11 w-full rounded-xl border px-4 text-sm font-bold transition-colors ${
-        armed
+      className={`mt-2.5 min-h-11 w-full rounded-xl border px-4 text-sm font-bold transition-colors ${armed
           ? "border-red-700 bg-red-600 text-white hover:bg-red-700"
           : "border-red-300 bg-white text-red-700 hover:bg-red-50"
-      }`}
+        }`}
     >
       {armed ? t("cancelConfirm") : t("cancel")}
     </button>

@@ -41,7 +41,7 @@ export default function CentreCard({
             <h3 className="text-base font-bold text-gray-900">{c.name}</h3>
           </div>
           <p className="mt-0.5 text-sm text-gray-500">
-            {c.distanceKm} {t("kmAway")} · {c.location}
+            {evaluation.distanceKm} {t("kmAway")} · {c.location}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">

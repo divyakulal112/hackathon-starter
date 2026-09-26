@@ -12,24 +12,49 @@ import type { AppointmentStatus } from "./types";
 
 export const ENGINE_WEIGHTS = {
   /** Up to 30 pts — nearer centres score higher. */
-  distance: 30,
+  distanceWeight: 30,
   /** Up to 25 pts — shorter queues score higher. */
-  queue: 25,
+  queueWeight: 25,
   /** Up to 25 pts — lower estimated wait scores higher. */
-  wait: 25,
+  waitTimeWeight: 25,
   /** Up to 10 pts — more remaining daily capacity scores higher. */
+  capacityWeight: 10,
+  /** 20 pts or 0 — crop eligibility is a hard requirement. */
+  eligibilityWeight: 20,
+
+  // Compatibility aliases
+  distance: 30,
+  queue: 25,
+  wait: 25,
   capacity: 10,
-  /** 20 pts or 0 — crop eligibility is a hard requirement multiplier. */
   eligibility: 20,
 } as const;
 
 /** Maximum possible total score, derived — do not hardcode elsewhere. */
 export const MAX_TOTAL_SCORE =
-  ENGINE_WEIGHTS.distance +
-  ENGINE_WEIGHTS.queue +
-  ENGINE_WEIGHTS.wait +
-  ENGINE_WEIGHTS.capacity +
-  ENGINE_WEIGHTS.eligibility;
+  ENGINE_WEIGHTS.distanceWeight +
+  ENGINE_WEIGHTS.queueWeight +
+  ENGINE_WEIGHTS.waitTimeWeight +
+  ENGINE_WEIGHTS.capacityWeight +
+  ENGINE_WEIGHTS.eligibilityWeight;
+
+// ---------------------------------------------------------------------------
+// Location-aware scoring reference bands
+// Distances in km; wait times in minutes. best → scores 1, worst → scores 0.
+// ---------------------------------------------------------------------------
+
+/** Reference bands used to normalise the haversine distance into a score. */
+export const DISTANCE_BEST_KM = 2;
+export const DISTANCE_WORST_KM = 30;
+
+/** Max number of alternative centres surfaced under the recommendation. */
+export const MAX_ALTERNATIVES = 6;
+
+/**
+ * Service radius: the engine only recommends centres within this distance of
+ * the farmer's selected location. Beyond it → "no suitable centre" state.
+ */
+export const SERVICE_RADIUS_KM = 25;
 
 // ---------------------------------------------------------------------------
 // Load-status thresholds (applied to queue / processing-rate ratio)

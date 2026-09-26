@@ -186,6 +186,14 @@ const en = {
   resetCongestionBtn: "🚜 Reset / Clear Congestion",
   simulatorCallout:
     "Demonstrates how KisanSync's coordination engine balances procurement traffic across the regional network when a single hub is congested.",
+  checklistAcceptsCrop: "Accepts selected crop",
+  checklistWithinServiceArea: "Within regional service radius",
+  checklistLowQueue: "Short queue & manageable wait",
+  checklistCapacityAvailable: "Procurement slots available today",
+  noEligibleInRadius: "No procurement centre within 25 km accepts this crop.",
+  alternativeCentres: "Alternative Procurement Centres",
+  selectLocation: "Select Village / Town",
+  locationRadiusNote: "Showing centres within 25 km service radius of your location.",
 };
 
 const kn = {
@@ -349,6 +357,14 @@ const kn = {
   resetCongestionBtn: "🚜 ಜನಸಂದಣಿ ಸ್ಪಷ್ಟಪಡಿಸಿ",
   simulatorCallout:
     "ಒಂದು ಕೇಂದ್ರ ಜನಸಂದಣಿಯಾದಾಗ ಕಿಸಾನ್‌ಸಿಂಕ್ ಸಮನ್ವಯ ಎಂಜಿನ್ ಪ್ರಾದೇಶಿಕ ಜಾಲದಲ್ಲಿ ಸಂಚಾರವನ್ನು ಸಮತೋಲನಗೊಳಿಸುವುದನ್ನು ತೋರಿಸುತ್ತದೆ.",
+  checklistAcceptsCrop: "ಆಯ್ಕೆಮಾಡಿದ ಬೆಳೆಯನ್ನು ಸ್ವೀಕರಿಸುತ್ತದೆ",
+  checklistWithinServiceArea: "ಪ್ರಾದೇಶಿಕ ಸೇವಾ ವ್ಯಾಪ್ತಿಯಲ್ಲಿದೆ",
+  checklistLowQueue: "ಕಡಿಮೆ ಸಾಲು ಮತ್ತು ಸ್ವೀಕಾರಾರ್ಹ ನಿರೀಕ್ಷಣೆ",
+  checklistCapacityAvailable: "ಇಂದು ಖರೀದಿ ಸಾಮರ್ಥ್ಯ ಲಭ್ಯವಿದೆ",
+  noEligibleInRadius: "25 ಕಿಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಈ ಬೆಳೆಯನ್ನು ಸ್ವೀಕರಿಸುವ ಯಾವುದೇ ಖರೀದಿ ಕೇಂದ್ರವಿಲ್ಲ.",
+  alternativeCentres: "ಪರ್ಯಾಯ ಖರೀದಿ ಕೇಂದ್ರಗಳು",
+  selectLocation: "ಹಳ್ಳಿ / ಪಟ್ಟಣ ಆಯ್ಕೆಮಾಡಿ",
+  locationRadiusNote: "ನಿಮ್ಮ ಸ್ಥಳದ 25 ಕಿಮೀ ಸೇವಾ ವ್ಯಾಪ್ತಿಯಲ್ಲಿರುವ ಕೇಂದ್ರಗಳನ್ನು ತೋರಿಸಲಾಗುತ್ತಿದೆ.",
 };
 
 const hi = {
@@ -512,6 +528,14 @@ const hi = {
   resetCongestionBtn: "🚜 भीड़ साफ़ करें",
   simulatorCallout:
     "यह दिखाता है कि एक केंद्र भीड़भाड़ होने पर किसानसिंक का समन्वय इंजन क्षेत्रीय नेटवर्क में यातायात संतुलित करता है।",
+  checklistAcceptsCrop: "चयनित फसल स्वीकार करता है",
+  checklistWithinServiceArea: "क्षेत्रीय सेवा दायरे के भीतर",
+  checklistLowQueue: "छोटी कतार और स्वीकार्य प्रतीक्षा",
+  checklistCapacityAvailable: "आज खरीद स्लॉट उपलब्ध हैं",
+  noEligibleInRadius: "25 किमी के दायरे में कोई खरीद केंद्र इस फसल को स्वीकार नहीं करता है।",
+  alternativeCentres: "वैकल्पिक खरीद केंद्र",
+  selectLocation: "गाँव / कस्बा चुनें",
+  locationRadiusNote: "आपके स्थान के 25 किमी सेवा दायरे में केंद्र दिखाए जा रहे हैं।",
 };
 
 export const TRANSLATIONS: Record<Language, typeof en> = { en, kn, hi };

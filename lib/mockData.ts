@@ -2,20 +2,152 @@
  * KisanSync — demo/mock data.
  * Simulated operational data so the app works immediately, with or without Supabase.
  * Replace `MOCK_CENTRES` with a `centres` table fetch when Supabase is wired up.
+ *
+ * Centres are distributed across multiple regions (Bengaluru, Moodbidri,
+ * Mangaluru, Karkala, Udupi, Belvai) with real approximate coordinates, so
+ * distance-aware recommendations behave like the real product. Names are
+ * clearly fictional demo procurement centres.
  */
 
-import type { Appointment, Centre, Crop, Farmer } from "./types";
+import type { Appointment, Centre, Crop, Farmer, FarmerLocation } from "./types";
 import { CROP_RATES_INR_PER_QUINTAL, DEMO_FARMER } from "./constants";
 
 // ---------------------------------------------------------------------------
-// Centres (realistic Dakshina Kannada district locations)
+// Farmer-selectable locations (villages/towns/cities, approximate coords)
+// The request form binds its location <select> to this list; the selected
+// location's lat/lng feeds the engine's haversine distance calculation.
+// ---------------------------------------------------------------------------
+
+export const MOCK_LOCATIONS: FarmerLocation[] = [
+  {
+    id: "loc-belvai",
+    name: "Belvai",
+    district: "Moodbidri Taluk, Dakshina Kannada",
+    latitude: 13.0092,
+    longitude: 75.02,
+  },
+  {
+    id: "loc-moodbidri",
+    name: "Moodbidri",
+    district: "Dakshina Kannada",
+    latitude: 12.994,
+    longitude: 74.993,
+  },
+  {
+    id: "loc-mangaluru",
+    name: "Mangaluru",
+    district: "Dakshina Kannada",
+    latitude: 12.9141,
+    longitude: 74.856,
+  },
+  {
+    id: "loc-karkala",
+    name: "Karkala",
+    district: "Udupi",
+    latitude: 13.203,
+    longitude: 74.999,
+  },
+  {
+    id: "loc-udupi",
+    name: "Udupi",
+    district: "Udupi",
+    latitude: 13.3409,
+    longitude: 74.7421,
+  },
+  {
+    id: "loc-bengaluru",
+    name: "Bengaluru",
+    district: "Bengaluru Urban",
+    latitude: 12.9716,
+    longitude: 77.5946,
+  },
+  {
+    id: "loc-nelamangala",
+    name: "Nelamangala",
+    district: "Bengaluru Rural",
+    latitude: 13.0992,
+    longitude: 77.3979,
+  },
+];
+
+/** Default demo farmer location (Belvai). */
+export const DEFAULT_LOCATION_ID = "loc-belvai";
+
+/** Looks up a farmer location by id — falls back to the demo default. */
+export function getFarmerLocation(locationId: string): FarmerLocation {
+  return (
+    MOCK_LOCATIONS.find((l) => l.id === locationId) ??
+    MOCK_LOCATIONS.find((l) => l.id === DEFAULT_LOCATION_ID) ??
+    MOCK_LOCATIONS[0]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Centres (multi-region demo network — fictional but geographically realistic)
 // ---------------------------------------------------------------------------
 
 export const MOCK_CENTRES: Centre[] = [
   {
+    id: "centre-bengaluru-apmc",
+    name: "Yeshwanthpur APMC Yard",
+    district: "Bengaluru Urban",
+    latitude: 12.9899,
+    longitude: 77.552,
+    queueCount: 22,
+    processingRatePerHour: 12,
+    capacityPerDay: 220,
+    bookedToday: 150,
+    eligibleCrops: [
+      "Paddy / Rice",
+      "Maize",
+      "Coconut",
+      "Groundnut",
+      "Chilli",
+      "Tomato",
+      "Potato",
+      "Black Gram",
+      "Green Gram",
+    ],
+    location: "Yeshwanthpur, Bengaluru",
+    opensAt: "08:00",
+    closesAt: "19:00",
+  },
+  {
+    id: "centre-bidadi",
+    name: "Bidadi Aggregation Centre",
+    district: "Bengaluru Urban",
+    latitude: 12.797,
+    longitude: 77.358,
+    queueCount: 8,
+    processingRatePerHour: 6,
+    capacityPerDay: 90,
+    bookedToday: 47,
+    eligibleCrops: ["Maize", "Tomato", "Potato", "Groundnut", "Chilli", "Green Gram"],
+    location: "Bidadi, Bengaluru South",
+    opensAt: "08:00",
+    closesAt: "18:00",
+  },
+  {
+    id: "centre-nelamangala",
+    name: "Nelamangala FPO Collection Hub",
+    district: "Bengaluru Rural",
+    latitude: 13.0989,
+    longitude: 77.396,
+    queueCount: 6,
+    processingRatePerHour: 5,
+    capacityPerDay: 80,
+    bookedToday: 41,
+    eligibleCrops: ["Paddy / Rice", "Maize", "Groundnut", "Potato", "Tomato", "Green Gram"],
+    location: "Nelamangala, Bengaluru Rural",
+    opensAt: "08:30",
+    closesAt: "18:00",
+  },
+  {
     id: "centre-moodbidri",
     name: "Moodbidri APMC",
-    distanceKm: 8,
+    district: "Dakshina Kannada",
+    latitude: 12.994,
+    longitude: 74.993,
     queueCount: 14,
     processingRatePerHour: 6,
     capacityPerDay: 100,
@@ -26,9 +158,26 @@ export const MOCK_CENTRES: Centre[] = [
     closesAt: "19:00",
   },
   {
+    id: "centre-belvai",
+    name: "Belvai Agro Hub",
+    district: "Dakshina Kannada",
+    latitude: 13.0092,
+    longitude: 75.02,
+    queueCount: 21,
+    processingRatePerHour: 4,
+    capacityPerDay: 40,
+    bookedToday: 36,
+    eligibleCrops: ["Paddy / Rice", "Chilli", "Tomato", "Potato", "Black Gram", "Green Gram"],
+    location: "Belvai",
+    opensAt: "09:00",
+    closesAt: "17:00",
+  },
+  {
     id: "centre-karkala",
     name: "Karkala Co-op",
-    distanceKm: 18,
+    district: "Udupi",
+    latitude: 13.203,
+    longitude: 74.999,
     queueCount: 4,
     processingRatePerHour: 5,
     capacityPerDay: 60,
@@ -39,17 +188,34 @@ export const MOCK_CENTRES: Centre[] = [
     closesAt: "18:00",
   },
   {
-    id: "centre-belvai",
-    name: "Belvai Agro Hub",
-    distanceKm: 4,
-    queueCount: 21,
-    processingRatePerHour: 4,
-    capacityPerDay: 40,
-    bookedToday: 36,
-    eligibleCrops: ["Paddy / Rice", "Chilli", "Tomato", "Potato", "Black Gram", "Green Gram"],
-    location: "Belvai",
-    opensAt: "09:00",
-    closesAt: "17:00",
+    id: "centre-mangaluru",
+    name: "Mangaluru Port Agro Terminal",
+    district: "Dakshina Kannada",
+    latitude: 12.874,
+    longitude: 74.842,
+    queueCount: 30,
+    processingRatePerHour: 10,
+    capacityPerDay: 180,
+    bookedToday: 120,
+    eligibleCrops: ["Paddy / Rice", "Coconut", "Arecanut", "Groundnut", "Chilli", "Potato"],
+    location: "Bunder, Mangaluru",
+    opensAt: "07:00",
+    closesAt: "20:00",
+  },
+  {
+    id: "centre-udupi",
+    name: "Udupi Agri Service Co-op",
+    district: "Udupi",
+    latitude: 13.335,
+    longitude: 74.748,
+    queueCount: 9,
+    processingRatePerHour: 7,
+    capacityPerDay: 90,
+    bookedToday: 52,
+    eligibleCrops: ["Paddy / Rice", "Coconut", "Arecanut", "Black Gram", "Green Gram", "Groundnut"],
+    location: "Udupi",
+    opensAt: "08:00",
+    closesAt: "18:30",
   },
 ];
 

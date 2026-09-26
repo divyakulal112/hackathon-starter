@@ -1,23 +1,61 @@
 /**
- * KisanSync — Coordination Engine.
+ * KisanSync — Location-Aware Coordination Engine.
  *
- * Transparent, rule-based scoring. No AI/ML — every point is traceable:
+ * Transparent, rule-based scoring. No black-box AI/ML — every point is traceable:
  *
  *   totalScore = distanceScore + queueScore + waitScore +
  *                capacityScore + eligibilityScore
  *
  * Weights live in lib/constants.ts (ENGINE_WEIGHTS) so judges can tune them.
+ * Location calculation uses the Haversine formula from the farmer's selected
+ * location (village / taluk / district coordinates) to each procurement centre.
  */
 
-import { ARRIVAL_WINDOW_MINUTES, ENGINE_WEIGHTS, LOAD_BUSY, LOAD_OPTIMAL } from "./constants";
+import {
+  ARRIVAL_WINDOW_MINUTES,
+  DISTANCE_BEST_KM,
+  DISTANCE_WORST_KM,
+  ENGINE_WEIGHTS,
+  LOAD_BUSY,
+  LOAD_OPTIMAL,
+  MAX_ALTERNATIVES,
+  SERVICE_RADIUS_KM,
+} from "./constants";
+import { getFarmerLocation } from "./mockData";
 import { calculateWaitMinutes, formatWaitMinutes } from "./waitTime";
 import type {
   Centre,
   CentreEvaluation,
   ExplanationFragments,
+  FarmerLocation,
   ProcurementRequest,
   RecommendationResult,
+  WhyChecklistItem,
 } from "./types";
+
+/**
+ * Calculates great-circle distance between two geo-coordinates in kilometres
+ * using the Haversine formula. Rounded to 1 decimal place.
+ */
+export function haversineDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  if (!Number.isFinite(lat1) || !Number.isFinite(lon1) || !Number.isFinite(lat2) || !Number.isFinite(lon2)) {
+    return 999;
+  }
+  const R = 6371; // Earth's mean radius in km
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return round1(R * c);
+}
 
 /** Composes a localized explanation from engine fragments. */
 export function composeExplanation(
@@ -29,7 +67,7 @@ export function composeExplanation(
   )}, ${translate(fragments.distance)}.`;
 }
 
-/** Normalises a value from [best, worst] to a 0..1 score (best → 1). */
+/** Normalises a value from [best, worst] to a 0..1 score (best → 1, worst → 0). */
 function normalise(value: number, best: number, worst: number): number {
   if (worst === best) return 1;
   const clamped = Math.min(Math.max(value, Math.min(best, worst)), Math.max(best, worst));
@@ -49,12 +87,11 @@ export function formatTime12h(hhmm: string): string {
 /** Adds minutes to a "HH:mm" string, returning "HH:mm". */
 function addMinutes(hhmm: string, minutes: number): string {
   const [h, m] = hhmm.split(":").map(Number);
-  const total = h * 60 + m + minutes;
-  const day = Math.floor(total / 1440);
+  const total = (h || 0) * 60 + (m || 0) + minutes;
   const rem = total % 1440;
   const hh = String(Math.floor(rem / 60)).padStart(2, "0");
   const mm = String(rem % 60).padStart(2, "0");
-  return day > 0 ? "23:59" : `${hh}:${mm}`;
+  return `${hh}:${mm}`;
 }
 
 /** The reusable Coordination Engine entry point. */
@@ -62,19 +99,39 @@ export function calculateCentreRecommendation(
   request: ProcurementRequest,
   centres: Centre[],
 ): RecommendationResult {
+  const farmerLocation = getFarmerLocation(request.locationId);
+
   const evaluations = centres
-    .map((centre) => evaluateCentre(centre, request))
+    .map((centre) => evaluateCentre(centre, request, farmerLocation))
     .sort((a, b) => {
+      // 1. Eligible + in service area comes first
+      const aInArea = a.eligibility === "eligible" && a.withinServiceArea;
+      const bInArea = b.eligibility === "eligible" && b.withinServiceArea;
+      if (aInArea !== bInArea) return aInArea ? -1 : 1;
+
+      // 2. Eligible comes before ineligible
       if (a.eligibility !== b.eligibility) {
         return a.eligibility === "eligible" ? -1 : 1;
       }
+
+      // 3. Higher total score wins
       return b.score.totalScore - a.score.totalScore;
     });
 
-  const best = evaluations.find((e) => e.eligibility === "eligible") ?? null;
+  // Recommended centre MUST be eligible AND within the regional service area
+  const best =
+    evaluations.find((e) => e.eligibility === "eligible" && e.withinServiceArea) ?? null;
+
+  const alternatives = evaluations
+    .filter((e) => e !== best && e.eligibility === "eligible")
+    .slice(0, MAX_ALTERNATIVES);
+
   return {
     best,
     evaluations,
+    alternatives,
+    withinServiceArea: best !== null,
+    farmerLocation,
     explanation: best ? composeEnglishFallback(best) : "",
     explanationFragments: best ? buildExplanationFragments(best) : null,
   };
@@ -100,28 +157,40 @@ function composeEnglishFallback(best: CentreEvaluation): string {
   return `Recommended because of ${queueText}, ${capacityText}, ${distanceText}.`;
 }
 
-/** Scores one centre against the farmer's request. */
+/** Scores one centre against the farmer's location and request. */
 function evaluateCentre(
   centre: Centre,
   request: ProcurementRequest,
+  farmerLocation: FarmerLocation,
 ): CentreEvaluation {
+  const distanceKm = haversineDistanceKm(
+    farmerLocation.latitude,
+    farmerLocation.longitude,
+    centre.latitude,
+    centre.longitude,
+  );
+  const withinServiceArea = distanceKm <= SERVICE_RADIUS_KM;
+
   const wait = calculateWaitMinutes(centre.queueCount, centre.processingRatePerHour);
   const remainingCapacity = Math.max(0, centre.capacityPerDay - centre.bookedToday);
+  const capacityPct =
+    centre.capacityPerDay > 0
+      ? Math.round((centre.bookedToday / centre.capacityPerDay) * 100)
+      : 100;
   const eligible = centre.eligibleCrops.includes(request.crop);
 
-  // Each factor is normalised against fixed reference ranges (0..1),
-  // then multiplied by its weight. Reference ranges are documented inline.
-  const distanceNorm = normalise(centre.distanceKm, 2, 40); // 2 km great, 40 km bad
-  const queueNorm = normalise(centre.queueCount, 0, 30); // 0 queue great, 30 bad
-  const waitNorm = Number.isFinite(wait) ? normalise(wait, 0, 240) : 0; // 4 hr wait worst
-  const capacityNorm = normalise(remainingCapacity, 0, 60); // more remaining is better
+  // Normalise each factor against centralized reference bands (0..1)
+  const distanceNorm = normalise(distanceKm, DISTANCE_BEST_KM, DISTANCE_WORST_KM);
+  const queueNorm = normalise(centre.queueCount, 0, 30);
+  const waitNorm = Number.isFinite(wait) ? normalise(wait, 0, 240) : 0;
+  const capacityNorm = normalise(remainingCapacity, 0, 60);
 
   const score = {
-    distanceScore: round1(distanceNorm * ENGINE_WEIGHTS.distance),
-    queueScore: round1(queueNorm * ENGINE_WEIGHTS.queue),
-    waitScore: round1(waitNorm * ENGINE_WEIGHTS.wait),
-    capacityScore: round1(capacityNorm * ENGINE_WEIGHTS.capacity),
-    eligibilityScore: eligible ? ENGINE_WEIGHTS.eligibility : 0,
+    distanceScore: round1(distanceNorm * ENGINE_WEIGHTS.distanceWeight),
+    queueScore: round1(queueNorm * ENGINE_WEIGHTS.queueWeight),
+    waitScore: round1(waitNorm * ENGINE_WEIGHTS.waitTimeWeight),
+    capacityScore: round1(capacityNorm * ENGINE_WEIGHTS.capacityWeight),
+    eligibilityScore: eligible ? ENGINE_WEIGHTS.eligibilityWeight : 0,
     totalScore: 0,
   };
   score.totalScore = round1(
@@ -132,9 +201,7 @@ function evaluateCentre(
       score.eligibilityScore,
   );
 
-  // ---- Recommended arrival window: now + wait (kept inside centre hours).
-  // If the queue pushes past closing time, the window back-ends from closing
-  // so it always stays ARRIVAL_WINDOW_MINUTES wide and start < end.
+  // Recommended arrival window: current time + wait clamped to centre hours
   const waitMinutes = Number.isFinite(wait) ? wait : 0;
   const closingMin = toMinutes(centre.closesAt);
   const openingMin = toMinutes(centre.opensAt);
@@ -145,7 +212,30 @@ function evaluateCentre(
   const end = formatHHMM(endMin);
   const arrivalWindowLabel = `${formatTime12h(start)} – ${formatTime12h(end)}`;
 
-  const reasons = buildReasons(centre, request, {
+  const checklist: WhyChecklistItem[] = [
+    {
+      key: "checklistAcceptsCrop",
+      passed: eligible,
+      detail: eligible ? request.crop : undefined,
+    },
+    {
+      key: "checklistWithinServiceArea",
+      passed: withinServiceArea,
+      detail: `${distanceKm} km (max ${SERVICE_RADIUS_KM} km)`,
+    },
+    {
+      key: "checklistLowQueue",
+      passed: centre.queueCount <= 15,
+      detail: `${centre.queueCount} in queue (~${formatWaitMinutes(wait)})`,
+    },
+    {
+      key: "checklistCapacityAvailable",
+      passed: remainingCapacity > 0,
+      detail: `${remainingCapacity} slots left`,
+    },
+  ];
+
+  const reasons = buildReasons(centre, request, distanceKm, {
     wait,
     remainingCapacity,
     eligible,
@@ -158,6 +248,9 @@ function evaluateCentre(
   return {
     centre,
     eligibility: eligible ? "eligible" : "ineligible",
+    distanceKm,
+    withinServiceArea,
+    capacityPct,
     estimatedWaitMinutes: wait,
     remainingCapacity,
     arrivalWindowStart: start,
@@ -165,6 +258,7 @@ function evaluateCentre(
     arrivalWindowLabel,
     score,
     reasons,
+    checklist,
   };
 }
 
@@ -181,21 +275,22 @@ interface ReasonInput {
 function buildReasons(
   centre: Centre,
   request: ProcurementRequest,
+  distanceKm: number,
   r: ReasonInput,
 ): string[] {
   const reasons: string[] = [];
   reasons.push(
-    `${centre.distanceKm} km away — distance score ${r.distanceScore}/${ENGINE_WEIGHTS.distance}.`,
+    `${distanceKm} km away — distance score ${r.distanceScore}/${ENGINE_WEIGHTS.distanceWeight}.`,
   );
   reasons.push(
-    `${centre.queueCount} farmers in queue, ~${formatWaitMinutes(r.wait)} wait — wait score ${r.waitScore}/${ENGINE_WEIGHTS.wait}.`,
+    `${centre.queueCount} farmers in queue, ~${formatWaitMinutes(r.wait)} wait — wait score ${r.waitScore}/${ENGINE_WEIGHTS.waitTimeWeight}.`,
   );
   reasons.push(
-    `${r.remainingCapacity} of ${centre.capacityPerDay} slots remaining — capacity score ${r.capacityScore}/${ENGINE_WEIGHTS.capacity}.`,
+    `${r.remainingCapacity} of ${centre.capacityPerDay} slots remaining — capacity score ${r.capacityScore}/${ENGINE_WEIGHTS.capacityWeight}.`,
   );
   reasons.push(
     r.eligible
-      ? `Accepts ${request.crop} — eligibility score ${ENGINE_WEIGHTS.eligibility}/${ENGINE_WEIGHTS.eligibility}.`
+      ? `Accepts ${request.crop} — eligibility score ${ENGINE_WEIGHTS.eligibilityWeight}/${ENGINE_WEIGHTS.eligibilityWeight}.`
       : `Does NOT accept ${request.crop}.`,
   );
   return reasons;
@@ -220,11 +315,11 @@ function buildExplanationFragments(best: CentreEvaluation): ExplanationFragments
         ? "explainPlentyCapacity"
         : "explainSufficientCapacity",
     distance:
-      c.distanceKm <= 10 ? "explainReasonableDistance" : "explainReasonableOption",
+      best.distanceKm <= 10 ? "explainReasonableDistance" : "explainReasonableOption",
   };
 }
 
-/** Rounds to 1 decimal so scores stay readable in the UI. */
+/** Rounds to 1 decimal place. */
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
@@ -237,13 +332,6 @@ function nowRoundedTo5(): string {
   const hh = String(Math.floor((rounded % 1440) / 60)).padStart(2, "0");
   const mm = String(rounded % 60).padStart(2, "0");
   return `${hh}:${mm}`;
-}
-
-/** Clamps an "HH:mm" into the centre's operating hours. */
-function clampToHours(hhmm: string, centre: Centre): string {
-  if (hhmm < centre.opensAt) return centre.opensAt;
-  if (hhmm > centre.closesAt) return centre.closesAt;
-  return hhmm;
 }
 
 /** "HH:mm" → minutes since midnight. */
@@ -262,9 +350,10 @@ function formatHHMM(totalMinutes: number): string {
 
 /** Convenience: is this centre currently "optimal", "busy" or "congested"? */
 export function centreLoadStatus(centre: Centre): "optimal" | "busy" | "congested" {
-  const ratio = centre.processingRatePerHour > 0
-    ? centre.queueCount / centre.processingRatePerHour
-    : Infinity;
+  const ratio =
+    centre.processingRatePerHour > 0
+      ? centre.queueCount / centre.processingRatePerHour
+      : Infinity;
   if (ratio <= LOAD_OPTIMAL) return "optimal";
   if (ratio <= LOAD_BUSY) return "busy";
   return "congested";
