@@ -5,6 +5,27 @@
  */
 
 // ---------------------------------------------------------------------------
+// Location
+// ---------------------------------------------------------------------------
+
+export interface Location {
+  id: string;
+  name: string;
+  normalizedName: string;
+  state?: string;
+  district?: string;
+  subdistrict?: string;
+  latitude: number;
+  longitude: number;
+  countryCode?: string;
+  featureClass?: string;
+  featureCode?: string;
+  population?: number;
+  source?: string;
+  externalId?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Centre
 // ---------------------------------------------------------------------------
 
@@ -13,11 +34,18 @@ export type CentreStatus = "optimal" | "busy" | "congested";
 export interface Centre {
   id: string;
   name: string;
-  /** District / city the centre operates in (display + grouping). */
-  district: string;
-  /** Centre geo-coordinate — used with the farmer's location for haversine. */
+  canonicalName?: string;
+  state?: string;
+  district?: string;
+  subdistrict?: string;
   latitude: number;
   longitude: number;
+  source?: string;
+  externalId?: string;
+  centreType?: "apmc_mandi" | "sub_yard" | "msp_procurement_hub" | "cooperative_society" | "collection_centre";
+  address?: string;
+  /** Distance from the demo farmer's location, in km. */
+  distanceKm: number;
   /** Farmers currently waiting in the live queue. */
   queueCount: number;
   /** Farmers the centre can process per hour (simulated operational data). */
@@ -33,6 +61,7 @@ export interface Centre {
   /** Operating hours of the centre (24h). */
   opensAt: string;
   closesAt: string;
+  active?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,8 +107,12 @@ export interface ProcurementRequest {
   quantityQuintals: number;
   /** Human-readable location name kept for appointment records/SMS. */
   village: string;
-  /** References a FarmerLocation — the source of truth for distance math. */
-  locationId: string;
+  /** Canonical location ID from the locations dataset */
+  locationId?: string;
+  /** Geographic latitude */
+  latitude?: number;
+  /** Geographic longitude */
+  longitude?: number;
   /** Preferred arrival period (morning/afternoon/evening). */
   preferredTime: PreferredTime;
   /** Preferred procurement date (ISO yyyy-mm-dd, optional — display only in demo). */
@@ -119,8 +152,8 @@ export interface Appointment {
   status: AppointmentStatus;
   /** Current stage of the 8-stage tracker (index into TRACKING_STAGES). */
   stageIndex: number;
-  /** Amount computed at weighment (₹ per quintal × quantity). */
-  estimatedAmountInr: number;
+  /** Amount computed from real Government modal price (₹ per quintal × quantity), or null if unavailable. */
+  estimatedAmountInr: number | null;
   /** Payment reference shown once payment is received. */
   paymentRef?: string;
   /** Archived appointments keep centre history but unlock the farmer's form. */
@@ -163,6 +196,8 @@ export interface CentreEvaluation {
   capacityPct: number;
   estimatedWaitMinutes: number;
   remainingCapacity: number;
+  /** True if centre is within the configurable service radius (default 50 km). */
+  isWithinServiceRadius: boolean;
   /** ISO-style "HH:mm" recommended arrival start. */
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
@@ -197,6 +232,14 @@ export interface ExplanationFragments {
   distance: ExplanationDistanceKey;
 }
 
+export interface FarmerLocation {
+  id: string;
+  name: string;
+  district: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface RecommendationResult {
   /**
    * The recommended centre — ONLY ever a centre that accepts the crop AND
@@ -206,16 +249,26 @@ export interface RecommendationResult {
   best: CentreEvaluation | null;
   /** All centres evaluated, sorted best-first (ineligible last). */
   evaluations: CentreEvaluation[];
+  /** Centres within the configurable service radius. */
+  nearbyEvaluations: CentreEvaluation[];
+  /** Centres outside the service radius, sorted by distance. */
+  distantAlternatives: CentreEvaluation[];
   /** Other eligible centres (excluding best), best-first — capped for UI. */
-  alternatives: CentreEvaluation[];
+  alternatives?: CentreEvaluation[];
   /** True only when a valid in-area recommendation exists. */
-  withinServiceArea: boolean;
+  withinServiceArea?: boolean;
   /** The farmer location the evaluation was computed against. */
-  farmerLocation: FarmerLocation;
+  farmerLocation?: FarmerLocation | Location | null;
   /** English fallback explanation (use explanationFragments + composeExplanation for localized text). */
   explanation: string;
   /** Translation-key fragments for language-aware composition in the UI. */
   explanationFragments: ExplanationFragments | null;
+  /** True when the farmer's location was successfully resolved from the canonical dataset. */
+  locationSupported?: boolean;
+  /** Resolved canonical location object. */
+  resolvedLocation?: Location | null;
+  /** Reason message when no suitable centre is available within the service area. */
+  noSuitableCentreReason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,12 +280,18 @@ export interface SmsMessage {
   /** Epoch millis — rendered relative to now in the drawer. */
   createdAt: number;
   kind: "booking" | "status" | "payment";
+  /** Message delivery state: 'received' or 'pending' */
+  deliveryStatus?: "received" | "pending";
   /** Structured payload; the drawer renders it in the active language. */
   tokenNumber: string;
   centreName: string;
+  /** Crop name and quantity for context */
+  crop?: string;
+  quantityQuintals?: number;
+  farmerId?: string;
   /** Translation key of the tracking stage (status/payment SMS). */
   stageKey?: string;
   arrivalWindow?: string;
-  amountInr?: number;
+  amountInr?: number | null;
   paymentRef?: string;
 }

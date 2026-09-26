@@ -2,6 +2,7 @@
 
 import { Clock, Users, Zap, MapPin, Gauge } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAppState } from "@/context/AppStateContext";
 import { formatWaitMinutes } from "@/lib/waitTime";
 import { centreLoadStatus } from "@/lib/recommendationEngine";
 import type { CentreEvaluation } from "@/lib/types";
@@ -22,6 +23,7 @@ export default function CentreCard({
   onSelect?: () => void;
 }) {
   const { t } = useLanguage();
+  const { isOffline } = useAppState();
   const { centre: c } = evaluation;
   const loadStatus = centreLoadStatus(c);
   const eligible = evaluation.eligibility === "eligible";
@@ -45,11 +47,21 @@ export default function CentreCard({
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
+          {isOffline && (
+            <span className="inline-flex rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+              📡 {t("lastKnownInfo")}
+            </span>
+          )}
           <StatusBadge variant={loadStatus} />
           <StatusBadge
             variant={evaluation.eligibility === "eligible" ? "good" : "bad"}
             label={evaluation.eligibility === "eligible" ? t("eligible") : t("notEligible")}
           />
+          {!evaluation.isWithinServiceRadius && (
+            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+              Outside radius
+            </span>
+          )}
         </div>
       </div>
 

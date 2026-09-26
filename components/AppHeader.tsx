@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Sprout, Wifi, WifiOff } from "lucide-react";
+import { CheckCircle2, RefreshCw, Sprout, Wifi, WifiOff } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { LANGUAGES } from "@/lib/translations";
 import { useAppState } from "@/context/AppStateContext";
@@ -9,13 +9,47 @@ import RoleSwitcher from "./RoleSwitcher";
 
 /**
  * AppHeader — brand, global role switcher, language selector and
- * online/offline state. Persistent frame for both role apps.
+ * offline-first connectivity state (ONLINE, OFFLINE, SYNCING, SYNCED).
  */
 export default function AppHeader() {
   const { language, setLanguage, t } = useLanguage();
-  const { isOffline, usingCachedData, setOfflineDemo } = useAppState();
+  const { isOffline, usingCachedData, syncState, setOfflineDemo } = useAppState();
 
   const showOffline = isOffline || usingCachedData;
+
+  let statusBadge = (
+    <span className="inline-flex items-center gap-1.5 font-bold">
+      <Wifi className="h-3.5 w-3.5 text-emerald-300" />
+      ONLINE
+    </span>
+  );
+  let badgeStyle = "border-emerald-400/60 text-emerald-50 hover:bg-emerald-600/50";
+
+  if (syncState === "OFFLINE" || showOffline) {
+    statusBadge = (
+      <span className="inline-flex items-center gap-1.5 font-bold text-amber-200">
+        <WifiOff className="h-3.5 w-3.5" />
+        OFFLINE
+      </span>
+    );
+    badgeStyle = "border-amber-300 bg-amber-400/20 text-amber-100 hover:bg-amber-400/30";
+  } else if (syncState === "SYNCING") {
+    statusBadge = (
+      <span className="inline-flex items-center gap-1.5 font-bold text-sky-200">
+        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+        SYNCING
+      </span>
+    );
+    badgeStyle = "border-sky-300 bg-sky-500/20 text-sky-100";
+  } else if (syncState === "SYNCED") {
+    statusBadge = (
+      <span className="inline-flex items-center gap-1.5 font-bold text-emerald-200">
+        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+        SYNCED
+      </span>
+    );
+    badgeStyle = "border-emerald-300 bg-emerald-500/20 text-emerald-100";
+  }
 
   return (
     <header className="sticky top-0 z-30 border-b border-emerald-800/40 bg-emerald-700 text-white">
@@ -51,36 +85,38 @@ export default function AppHeader() {
             ))}
           </div>
 
-          {/* Online / offline indicator (clickable demo toggle). */}
-          {/* Clicking it never replaces live data — banner only. */}
+          {/* Online / offline / syncing / synced indicator (clickable demo toggle) */}
           <button
             type="button"
             onClick={() => setOfflineDemo(!showOffline)}
             title={
               showOffline
-                ? "Demo: click to go back online"
+                ? "Demo: click to reconnect & trigger automatic sync"
                 : "Demo: click to simulate offline mode"
             }
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
-              showOffline
-                ? "border-amber-300 bg-amber-400/20 text-amber-100"
-                : "border-emerald-400/60 text-emerald-50"
-            }`}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${badgeStyle}`}
           >
-            {showOffline ? (
-              <WifiOff className="h-3.5 w-3.5" />
-            ) : (
-              <Wifi className="h-3.5 w-3.5" />
-            )}
-            {showOffline ? t("offline") : t("online")}
+            {statusBadge}
           </button>
         </div>
       </div>
 
-      {/* Offline banner */}
-      {showOffline && (
+      {/* Dynamic Connectivity Banners */}
+      {(syncState === "OFFLINE" || showOffline) && (
         <div className="bg-amber-400 px-4 py-1.5 text-center text-xs font-bold text-amber-950">
-          {t("offlineBanner")}
+          ⚠️ {t("offlineBanner")} · {t("offlineStatus")}
+        </div>
+      )}
+      {syncState === "SYNCING" && (
+        <div className="flex items-center justify-center gap-2 bg-sky-600 px-4 py-1.5 text-center text-xs font-bold text-white">
+          <RefreshCw className="h-3 w-3 animate-spin" />
+          {t("syncingStatus")}
+        </div>
+      )}
+      {syncState === "SYNCED" && (
+        <div className="flex items-center justify-center gap-2 bg-emerald-600 px-4 py-1.5 text-center text-xs font-bold text-white">
+          <CheckCircle2 className="h-3 w-3" />
+          {t("syncedStatus")}
         </div>
       )}
     </header>

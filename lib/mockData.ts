@@ -9,215 +9,238 @@
  * clearly fictional demo procurement centres.
  */
 
-import type { Appointment, Centre, Crop, Farmer, FarmerLocation } from "./types";
-import { CROP_RATES_INR_PER_QUINTAL, DEMO_FARMER } from "./constants";
+import type { Appointment, Centre, Crop, Farmer, Location, FarmerLocation } from "./types";
+import { DEMO_FARMER } from "./constants";
+import { VERIFIED_CENTRES } from "./data/centresData";
 
 // ---------------------------------------------------------------------------
-// Farmer-selectable locations (villages/towns/cities, approximate coords)
-// The request form binds its location <select> to this list; the selected
-// location's lat/lng feeds the engine's haversine distance calculation.
+// Canonical Locations Dataset (Geocoded towns/villages)
 // ---------------------------------------------------------------------------
 
-export const MOCK_LOCATIONS: FarmerLocation[] = [
-  {
-    id: "loc-belvai",
-    name: "Belvai",
-    district: "Moodbidri Taluk, Dakshina Kannada",
-    latitude: 13.0092,
-    longitude: 75.02,
-  },
+export const LOCATIONS: Location[] = [
   {
     id: "loc-moodbidri",
     name: "Moodbidri",
+    normalizedName: "moodbidri",
     district: "Dakshina Kannada",
-    latitude: 12.994,
-    longitude: 74.993,
+    state: "Karnataka",
+    latitude: 13.0697,
+    longitude: 74.9983,
   },
   {
-    id: "loc-mangaluru",
-    name: "Mangaluru",
+    id: "loc-belvai",
+    name: "Belvai",
+    normalizedName: "belvai",
     district: "Dakshina Kannada",
-    latitude: 12.9141,
-    longitude: 74.856,
+    state: "Karnataka",
+    latitude: 13.1114,
+    longitude: 75.0022,
   },
   {
     id: "loc-karkala",
     name: "Karkala",
+    normalizedName: "karkala",
     district: "Udupi",
-    latitude: 13.203,
-    longitude: 74.999,
+    state: "Karnataka",
+    latitude: 13.2167,
+    longitude: 74.9972,
+  },
+  {
+    id: "loc-mangaluru",
+    name: "Mangaluru",
+    normalizedName: "mangaluru",
+    district: "Dakshina Kannada",
+    state: "Karnataka",
+    latitude: 12.9141,
+    longitude: 74.856,
   },
   {
     id: "loc-udupi",
     name: "Udupi",
+    normalizedName: "udupi",
     district: "Udupi",
+    state: "Karnataka",
     latitude: 13.3409,
     longitude: 74.7421,
   },
   {
+    id: "loc-kasaragod",
+    name: "Kasaragod",
+    normalizedName: "kasaragod",
+    district: "Kasaragod",
+    state: "Kerala",
+    latitude: 12.4996,
+    longitude: 74.9869,
+  },
+  {
+    id: "loc-kozhikode",
+    name: "Kozhikode",
+    normalizedName: "kozhikode",
+    district: "Kozhikode",
+    state: "Kerala",
+    latitude: 11.2588,
+    longitude: 75.7804,
+  },
+  {
     id: "loc-bengaluru",
     name: "Bengaluru",
+    normalizedName: "bengaluru",
     district: "Bengaluru Urban",
+    state: "Karnataka",
     latitude: 12.9716,
     longitude: 77.5946,
   },
   {
-    id: "loc-nelamangala",
-    name: "Nelamangala",
-    district: "Bengaluru Rural",
-    latitude: 13.0992,
-    longitude: 77.3979,
+    id: "loc-bantwal",
+    name: "Bantwal",
+    normalizedName: "bantwal",
+    district: "Dakshina Kannada",
+    state: "Karnataka",
+    latitude: 12.8906,
+    longitude: 75.0347,
+  },
+  {
+    id: "loc-puttur",
+    name: "Puttur",
+    normalizedName: "puttur",
+    district: "Dakshina Kannada",
+    state: "Karnataka",
+    latitude: 12.7667,
+    longitude: 75.2,
+  },
+  {
+    id: "loc-sullia",
+    name: "Sullia",
+    normalizedName: "sullia",
+    district: "Dakshina Kannada",
+    state: "Karnataka",
+    latitude: 12.5667,
+    longitude: 75.3833,
+  },
+  {
+    id: "loc-kundapura",
+    name: "Kundapura",
+    normalizedName: "kundapura",
+    district: "Udupi",
+    state: "Karnataka",
+    latitude: 13.6268,
+    longitude: 74.6917,
+  },
+  {
+    id: "loc-manipal",
+    name: "Manipal",
+    normalizedName: "manipal",
+    district: "Udupi",
+    state: "Karnataka",
+    latitude: 13.3525,
+    longitude: 74.7865,
+  },
+  {
+    id: "loc-surathkal",
+    name: "Surathkal",
+    normalizedName: "surathkal",
+    district: "Dakshina Kannada",
+    state: "Karnataka",
+    latitude: 13.0116,
+    longitude: 74.7943,
+  },
+  {
+    id: "loc-mysuru",
+    name: "Mysuru",
+    normalizedName: "mysuru",
+    district: "Mysuru",
+    state: "Karnataka",
+    latitude: 12.2958,
+    longitude: 76.6394,
+  },
+  {
+    id: "loc-hassan",
+    name: "Hassan",
+    normalizedName: "hassan",
+    district: "Hassan",
+    state: "Karnataka",
+    latitude: 13.0033,
+    longitude: 76.1004,
+  },
+  {
+    id: "loc-shivamogga",
+    name: "Shivamogga",
+    normalizedName: "shivamogga",
+    district: "Shivamogga",
+    state: "Karnataka",
+    latitude: 13.9299,
+    longitude: 75.5681,
+  },
+  {
+    id: "loc-hyderabad",
+    name: "Hyderabad",
+    normalizedName: "hyderabad",
+    district: "Hyderabad",
+    state: "Telangana",
+    latitude: 17.385,
+    longitude: 78.4867,
+  },
+  {
+    id: "loc-delhi",
+    name: "Delhi",
+    normalizedName: "delhi",
+    district: "New Delhi",
+    state: "Delhi",
+    latitude: 28.6139,
+    longitude: 77.209,
+  },
+  {
+    id: "loc-mumbai",
+    name: "Mumbai",
+    normalizedName: "mumbai",
+    district: "Mumbai",
+    state: "Maharashtra",
+    latitude: 19.076,
+    longitude: 72.8777,
+  },
+  {
+    id: "loc-chennai",
+    name: "Chennai",
+    normalizedName: "chennai",
+    district: "Chennai",
+    state: "Tamil Nadu",
+    latitude: 13.0827,
+    longitude: 80.2707,
+  },
+  {
+    id: "loc-kochi",
+    name: "Kochi",
+    normalizedName: "kochi",
+    district: "Ernakulam",
+    state: "Kerala",
+    latitude: 9.9312,
+    longitude: 76.2673,
   },
 ];
 
-/** Default demo farmer location (Belvai). */
-export const DEFAULT_LOCATION_ID = "loc-belvai";
+export const MOCK_LOCATIONS: Location[] = LOCATIONS;
 
-/** Looks up a farmer location by id — falls back to the demo default. */
-export function getFarmerLocation(locationId: string): FarmerLocation {
+/** Default demo farmer location (Moodbidri / Belvai). */
+export const DEFAULT_LOCATION_ID = "loc-moodbidri";
+
+/** Looks up a farmer location by id or name — falls back to the demo default. */
+export function getFarmerLocation(locationIdOrName: string): Location {
   return (
-    MOCK_LOCATIONS.find((l) => l.id === locationId) ??
-    MOCK_LOCATIONS.find((l) => l.id === DEFAULT_LOCATION_ID) ??
-    MOCK_LOCATIONS[0]
+    LOCATIONS.find(
+      (l) =>
+        l.id === locationIdOrName ||
+        l.name.toLowerCase() === locationIdOrName.toLowerCase(),
+    ) ??
+    LOCATIONS.find((l) => l.id === DEFAULT_LOCATION_ID) ??
+    LOCATIONS[0]
   );
 }
 
 // ---------------------------------------------------------------------------
-// Centres (multi-region demo network — fictional but geographically realistic)
+// Centres (Master verified procurement centre dataset)
 // ---------------------------------------------------------------------------
 
-export const MOCK_CENTRES: Centre[] = [
-  {
-    id: "centre-bengaluru-apmc",
-    name: "Yeshwanthpur APMC Yard",
-    district: "Bengaluru Urban",
-    latitude: 12.9899,
-    longitude: 77.552,
-    queueCount: 22,
-    processingRatePerHour: 12,
-    capacityPerDay: 220,
-    bookedToday: 150,
-    eligibleCrops: [
-      "Paddy / Rice",
-      "Maize",
-      "Coconut",
-      "Groundnut",
-      "Chilli",
-      "Tomato",
-      "Potato",
-      "Black Gram",
-      "Green Gram",
-    ],
-    location: "Yeshwanthpur, Bengaluru",
-    opensAt: "08:00",
-    closesAt: "19:00",
-  },
-  {
-    id: "centre-bidadi",
-    name: "Bidadi Aggregation Centre",
-    district: "Bengaluru Urban",
-    latitude: 12.797,
-    longitude: 77.358,
-    queueCount: 8,
-    processingRatePerHour: 6,
-    capacityPerDay: 90,
-    bookedToday: 47,
-    eligibleCrops: ["Maize", "Tomato", "Potato", "Groundnut", "Chilli", "Green Gram"],
-    location: "Bidadi, Bengaluru South",
-    opensAt: "08:00",
-    closesAt: "18:00",
-  },
-  {
-    id: "centre-nelamangala",
-    name: "Nelamangala FPO Collection Hub",
-    district: "Bengaluru Rural",
-    latitude: 13.0989,
-    longitude: 77.396,
-    queueCount: 6,
-    processingRatePerHour: 5,
-    capacityPerDay: 80,
-    bookedToday: 41,
-    eligibleCrops: ["Paddy / Rice", "Maize", "Groundnut", "Potato", "Tomato", "Green Gram"],
-    location: "Nelamangala, Bengaluru Rural",
-    opensAt: "08:30",
-    closesAt: "18:00",
-  },
-  {
-    id: "centre-moodbidri",
-    name: "Moodbidri APMC",
-    district: "Dakshina Kannada",
-    latitude: 12.994,
-    longitude: 74.993,
-    queueCount: 14,
-    processingRatePerHour: 6,
-    capacityPerDay: 100,
-    bookedToday: 68,
-    eligibleCrops: ["Paddy / Rice", "Maize", "Coconut", "Groundnut", "Black Gram", "Green Gram"],
-    location: "Moodbidri",
-    opensAt: "08:00",
-    closesAt: "19:00",
-  },
-  {
-    id: "centre-belvai",
-    name: "Belvai Agro Hub",
-    district: "Dakshina Kannada",
-    latitude: 13.0092,
-    longitude: 75.02,
-    queueCount: 21,
-    processingRatePerHour: 4,
-    capacityPerDay: 40,
-    bookedToday: 36,
-    eligibleCrops: ["Paddy / Rice", "Chilli", "Tomato", "Potato", "Black Gram", "Green Gram"],
-    location: "Belvai",
-    opensAt: "09:00",
-    closesAt: "17:00",
-  },
-  {
-    id: "centre-karkala",
-    name: "Karkala Co-op",
-    district: "Udupi",
-    latitude: 13.203,
-    longitude: 74.999,
-    queueCount: 4,
-    processingRatePerHour: 5,
-    capacityPerDay: 60,
-    bookedToday: 22,
-    eligibleCrops: ["Paddy / Rice", "Maize", "Coconut", "Arecanut", "Black Gram", "Green Gram"],
-    location: "Karkala",
-    opensAt: "08:30",
-    closesAt: "18:00",
-  },
-  {
-    id: "centre-mangaluru",
-    name: "Mangaluru Port Agro Terminal",
-    district: "Dakshina Kannada",
-    latitude: 12.874,
-    longitude: 74.842,
-    queueCount: 30,
-    processingRatePerHour: 10,
-    capacityPerDay: 180,
-    bookedToday: 120,
-    eligibleCrops: ["Paddy / Rice", "Coconut", "Arecanut", "Groundnut", "Chilli", "Potato"],
-    location: "Bunder, Mangaluru",
-    opensAt: "07:00",
-    closesAt: "20:00",
-  },
-  {
-    id: "centre-udupi",
-    name: "Udupi Agri Service Co-op",
-    district: "Udupi",
-    latitude: 13.335,
-    longitude: 74.748,
-    queueCount: 9,
-    processingRatePerHour: 7,
-    capacityPerDay: 90,
-    bookedToday: 52,
-    eligibleCrops: ["Paddy / Rice", "Coconut", "Arecanut", "Black Gram", "Green Gram", "Groundnut"],
-    location: "Udupi",
-    opensAt: "08:00",
-    closesAt: "18:30",
-  },
-];
+export const MOCK_CENTRES: Centre[] = VERIFIED_CENTRES;
 
 export const DEMO_FARMER_PROFILE: Farmer = {
   id: DEMO_FARMER.id,
@@ -240,12 +263,12 @@ export const DEMO_CROPS: Crop[] = [
 
 /** Other farmers already booked at centres today (centre dashboard queue). */
 export const MOCK_APPOINTMENTS: Appointment[] = [
-  seedAppointment("KS-101", "centre-moodbidri", "Moodbidri APMC", "Lakshmi Rai", "Paddy / Rice", 12, "slot_booked", 0),
-  seedAppointment("KS-102", "centre-moodbidri", "Moodbidri APMC", "Suresh Shetty", "Coconut", 8, "arrived", 1),
-  seedAppointment("KS-103", "centre-moodbidri", "Moodbidri APMC", "Ganesh Poojary", "Paddy / Rice", 20, "weighed", 2),
-  seedAppointment("KS-105", "centre-karkala", "Karkala Co-op", "Vasanth Alva", "Arecanut", 6, "slot_booked", 0),
-  seedAppointment("KS-106", "centre-karkala", "Karkala Co-op", "Prakash Nayak", "Paddy / Rice", 15, "slot_booked", 0),
-  seedAppointment("KS-107", "centre-belvai", "Belvai Agro Hub", "Ravi Shetty", "Chilli", 10, "slot_booked", 0),
+  seedAppointment("KS-101", "centre-moodbidri", "Moodbidri APMC Sub-Yard", "Lakshmi Rai", "Paddy / Rice", 12, "slot_booked", 0),
+  seedAppointment("KS-102", "centre-moodbidri", "Moodbidri APMC Sub-Yard", "Suresh Shetty", "Coconut", 8, "arrived", 1),
+  seedAppointment("KS-103", "centre-moodbidri", "Moodbidri APMC Sub-Yard", "Ganesh Poojary", "Paddy / Rice", 20, "weighed", 2),
+  seedAppointment("KS-105", "centre-karkala", "Karkala APMC Yard & Co-op", "Vasanth Alva", "Arecanut", 6, "slot_booked", 0),
+  seedAppointment("KS-106", "centre-karkala", "Karkala APMC Yard & Co-op", "Prakash Nayak", "Paddy / Rice", 15, "slot_booked", 0),
+  seedAppointment("KS-107", "centre-belvai", "Belvai Primary Agri Co-op", "Ravi Shetty", "Chilli", 10, "slot_booked", 0),
 ];
 
 function seedAppointment(
@@ -258,7 +281,6 @@ function seedAppointment(
   status: Appointment["status"],
   stageIndex: number,
 ): Appointment {
-  const rate = CROP_RATES_INR_PER_QUINTAL[crop] ?? 2000;
   return {
     id: `apt-${token.toLowerCase()}`,
     tokenNumber: token,
@@ -273,6 +295,6 @@ function seedAppointment(
     bookedAt: new Date().toISOString(),
     status,
     stageIndex,
-    estimatedAmountInr: rate * quantityQuintals,
+    estimatedAmountInr: null,
   };
 }

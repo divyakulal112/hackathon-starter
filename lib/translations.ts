@@ -23,6 +23,28 @@ const en = {
   online: "Online",
   offline: "Offline",
   offlineBanner: "Offline Mode: Showing Last Synced Hub Data",
+  onlineStatus: "You're online",
+  offlineStatus: "You're offline — requests will be saved on this device.",
+  syncingStatus: "Syncing your pending requests...",
+  syncedStatus: "Your request has been submitted successfully.",
+  savedOffline: "Saved Offline",
+  pendingOffline: "PENDING_OFFLINE",
+  offlineSyncNotice: "Your request will be submitted automatically when connectivity returns.",
+  lastKnownInfo: "Last known information",
+  offlineModalNotice: "You are currently offline. This request will be stored safely on your device and automatically submitted once your network connection is restored.",
+  saveOfflineBtn: "Save Request Offline",
+  cancelRequest: "Cancel Request",
+  requiresAttention: "Requires Attention",
+  awaitingConfirmation: "Pending Confirmation",
+  marketRate: "Market Rate",
+  modalPrice: "Modal Price",
+  priceUnavailable: "Price unavailable",
+  priceUnavailableDesc: "Market price is currently unavailable. Please try again later.",
+  lastKnownMarketRate: "Last known market rate",
+  marketPriceUnavailableOffline: "Market price unavailable offline.",
+  govSourceNotice: "Source: Government Mandi Data (Agmarknet / DMI)",
+  mandiPriceLabel: "Latest mandi modal price",
+  loadingMarketPrice: "Checking latest mandi rate...",
   // Farmer info
   demoFarmer: "Ramesh Gowda",
   village: "Village",
@@ -106,6 +128,11 @@ const en = {
   smsBooking: "Token booked",
   smsStatus: "Status update",
   smsPayment: "Payment update",
+  smsReceived: "Received",
+  smsPending: "Pending",
+  smsAll: "All",
+  smsNoPending: "No pending messages.",
+  smsBookAction: "Book a Token",
   // Voice
   voiceAssist: "Read recommendation aloud",
   voiceUnavailable: "Voice not supported on this browser",
@@ -207,6 +234,28 @@ const kn = {
   online: "ಆನ್‌ಲೈನ್",
   offline: "ಆಫ್‌ಲೈನ್",
   offlineBanner: "ಆಫ್‌ಲೈನ್ ಮೋಡ್: ಕೊನೆಯ ಸಿಂಕ್ ಮಾಡಿದ ಡೇಟಾ ತೋರಿಸಲಾಗುತ್ತಿದೆ",
+  onlineStatus: "ನೀವು ಆನ್‌ಲೈನ್‌ನಲ್ಲಿದ್ದೀರಿ",
+  offlineStatus: "ನೀವು ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿದ್ದೀರಿ — ವಿನಂತಿಗಳನ್ನು ಈ ಸಾಧನದಲ್ಲಿ ಉಳಿಸಲಾಗುತ್ತದೆ.",
+  syncingStatus: "ನಿಮ್ಮ ಬಾಕಿ ವಿನಂತಿಗಳನ್ನು ಸಿಂಕ್ ಮಾಡಲಾಗುತ್ತಿದೆ...",
+  syncedStatus: "ನಿಮ್ಮ ವಿನಂತಿಯನ್ನು ಯಶಸ್ವಿಯಾಗಿ ಸಲ್ಲಿಸಲಾಗಿದೆ.",
+  savedOffline: "ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿ ಉಳಿಸಲಾಗಿದೆ",
+  pendingOffline: "ಆಫ್‌ಲೈನ್ ಬಾಕಿ",
+  offlineSyncNotice: "ಸಂಪರ್ಕ ಮರಳಿದಾಗ ನಿಮ್ಮ ವಿನಂತಿಯನ್ನು ಸ್ವಯಂಚಾಲಿತವಾಗಿ ಸಲ್ಲಿಸಲಾಗುತ್ತದೆ.",
+  lastKnownInfo: "ಕೊನೆಯ ತಿಳಿದಿರುವ ಮಾಹಿತಿ",
+  offlineModalNotice: "ನೀವು ಪ್ರಸ್ತುತ ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿದ್ದೀರಿ. ಸಂಪರ್ಕ ಬಂದಾಗ ಈ ವಿನಂತಿ ಸ್ವಯಂಚಾಲಿತವಾಗಿ ಸಲ್ಲಿಕೆಯಾಗುತ್ತದೆ.",
+  saveOfflineBtn: "ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿ ವಿನಂತಿ ಉಳಿಸಿ",
+  cancelRequest: "ವಿನಂತಿ ರದ್ದುಮಾಡಿ",
+  requiresAttention: "ಗಮನ ಅಗತ್ಯವಿದೆ",
+  awaitingConfirmation: "ದೃಢೀಕರಣಕ್ಕಾಗಿ ಕಾಯಲಾಗುತ್ತಿದೆ",
+  marketRate: "ಮಾರುಕಟ್ಟೆ ದರ",
+  modalPrice: "ಮಾದರಿ ಬೆಲೆ",
+  priceUnavailable: "ಬೆಲೆ ಲಭ್ಯವಿಲ್ಲ",
+  priceUnavailableDesc: "ಮಾರುಕಟ್ಟೆ ಬೆಲೆ ಪ್ರಸ್ತುತ ಲಭ್ಯವಿಲ್ಲ. ದಯವಿಟ್ಟು ನಂತರ ಪ್ರಯತ್ನಿಸಿ.",
+  lastKnownMarketRate: "ಕೊನೆಯದಾಗಿ ತಿಳಿದ ಮಾರುಕಟ್ಟೆ ದರ",
+  marketPriceUnavailableOffline: "ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿ ಮಾರುಕಟ್ಟೆ ಬೆಲೆ ಲಭ್ಯವಿಲ್ಲ.",
+  govSourceNotice: "ಮೂಲ: ಸರ್ಕಾರದ ಮಂಡಿ ದತ್ತಾಂಶ (Agmarknet / DMI)",
+  mandiPriceLabel: "ಇತ್ತೀಚಿನ ಮಂಡಿ ಮಾದರಿ ಬೆಲೆ",
+  loadingMarketPrice: "ಮಂಡಿ ದರ ಪರಿಶೀಲಿಸಲಾಗುತ್ತಿದೆ...",
   demoFarmer: "ರಮೇಶ್ ಗೌಡ",
   village: "ಹಳ್ಳಿ",
   crop: "ಬೆಳೆ",
@@ -284,6 +333,11 @@ const kn = {
   smsBooking: "ಟೋಕನ್ ಬುಕ್",
   smsStatus: "ಸ್ಥಿತಿ ನವೀಕರಣ",
   smsPayment: "ಪಾವತಿ ನವೀಕರಣ",
+  smsReceived: "ಸ್ವೀಕರಿಸಲಾಗಿದೆ",
+  smsPending: "ಬಾಕಿ ಉಳಿದಿದೆ",
+  smsAll: "ಎಲ್ಲಾ",
+  smsNoPending: "ಯಾವುದೇ ಬಾಕಿ ಸಂದೇಶಗಳಿಲ್ಲ.",
+  smsBookAction: "ಟೋಕನ್ ಬುಕ್ ಮಾಡಿ",
   voiceAssist: "ಶಿಫಾರಸನ್ನು ಧ್ವನಿಯಲ್ಲಿ ಓದಿ",
   voiceUnavailable: "ಈ ಬ್ರೌಸರ್‌ನಲ್ಲಿ ಧ್ವನಿ ಬೆಂಬಲವಿಲ್ಲ",
   voiceFallback: "ಕನ್ನಡ ಧ್ವನಿ ಇಲ್ಲ — ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಓದಲಾಗುತ್ತಿದೆ",
@@ -378,6 +432,28 @@ const hi = {
   online: "ऑनलाइन",
   offline: "ऑफलाइन",
   offlineBanner: "ऑफलाइन मोड: पिछला सिंक किया डेटा दिखाया जा रहा है",
+  onlineStatus: "आप ऑनलाइन हैं",
+  offlineStatus: "आप ऑफलाइन हैं — अनुरोध इस डिवाइस पर सुरक्षित रहेंगे।",
+  syncingStatus: "आपके लंबित अनुरोध सिंक किए जा रहे हैं...",
+  syncedStatus: "आपका अनुरोध सफलतापूर्वक जमा हो गया।",
+  savedOffline: "ऑफलाइन सहेजा गया",
+  pendingOffline: "ऑफलाइन लंबित",
+  offlineSyncNotice: "नेटवर्क वापस आने पर आपका अनुरोध स्वतः सबमिट हो जाएगा।",
+  lastKnownInfo: "अंतिम ज्ञात जानकारी",
+  offlineModalNotice: "आप अभी ऑफलाइन हैं। यह अनुरोध आपके डिवाइस पर सुरक्षित रहेगा और नेटवर्क वापस आने पर स्वतः सबमिट हो जाएगा।",
+  saveOfflineBtn: "अनुरोध ऑफलाइन सहेजें",
+  cancelRequest: "अनुरोध रद्द करें",
+  requiresAttention: "कार्रवाई आवश्यक है",
+  awaitingConfirmation: "पुष्टि की प्रतीक्षा है",
+  marketRate: "मंडी भाव",
+  modalPrice: "मॉडल भाव",
+  priceUnavailable: "मूल्य उपलब्ध नहीं",
+  priceUnavailableDesc: "मंडी भाव अभी उपलब्ध नहीं है। कृपया बाद में पुनः प्रयास करें।",
+  lastKnownMarketRate: "अंतिम ज्ञात मंडी भाव",
+  marketPriceUnavailableOffline: "ऑफलाइन में मंडी भाव उपलब्ध नहीं है।",
+  govSourceNotice: "स्रोत: सरकारी मंडी डेटा (Agmarknet / DMI)",
+  mandiPriceLabel: "नवीनतम मंडी मॉडल भाव",
+  loadingMarketPrice: "नवीनतम मंडी भाव जाँचा जा रहा है...",
   demoFarmer: "रमेश गौड़ा",
   village: "गाँव",
   crop: "फसल",
@@ -455,6 +531,11 @@ const hi = {
   smsBooking: "टोकन बुक",
   smsStatus: "स्थिति अपडेट",
   smsPayment: "भुगतान अपडेट",
+  smsReceived: "प्राप्त",
+  smsPending: "लंबित",
+  smsAll: "सभी",
+  smsNoPending: "कोई लंबित संदेश नहीं।",
+  smsBookAction: "टोकन बुक करें",
   voiceAssist: "अनुशंसा ज़ोर से पढ़ें",
   voiceUnavailable: "इस ब्राउज़र में वॉइस समर्थन नहीं है",
   voiceFallback: "कन्नड़ आवाज़ नहीं मिली — अंग्रेज़ी में बोल रहे हैं",
@@ -549,32 +630,48 @@ export type TranslationKey = keyof typeof en;
 export const SMS_TEMPLATES: Record<
   Language,
   {
-    booking: (token: string, centre: string, window: string) => string;
-    status: (token: string, centre: string, stage: string) => string;
-    payment: (token: string, centre: string, amount: string, ref: string) => string;
+    booking: (
+      token: string,
+      centre: string,
+      window: string,
+      crop?: string,
+      qty?: number,
+    ) => string;
+    status: (
+      token: string,
+      centre: string,
+      stage: string,
+      crop?: string,
+    ) => string;
+    payment: (
+      token: string,
+      centre: string,
+      amount: string,
+      ref: string,
+    ) => string;
   }
 > = {
   en: {
-    booking: (token, centre, window) =>
-      `KisanSync: Your token ${token} is booked at ${centre}. Expected arrival: ${window}.`,
-    status: (token, centre, stage) =>
-      `KisanSync: Token ${token} at ${centre} — Status: ${stage}.`,
+    booking: (token, centre, window, crop, qty) =>
+      `KisanSync: Your token ${token}${crop ? ` for ${crop}${qty ? ` (${qty}q)` : ""}` : ""} is booked at ${centre}. Expected arrival: ${window}.`,
+    status: (token, centre, stage, crop) =>
+      `KisanSync: Token ${token}${crop ? ` (${crop})` : ""} at ${centre} — Status: ${stage}.`,
     payment: (token, centre, amount, ref) =>
       `KisanSync: Payment of ${amount} for token ${token} (${centre}) credited. Ref: ${ref}.`,
   },
   kn: {
-    booking: (token, centre, window) =>
-      `ಕಿಸಾನ್‌ಸಿಂಕ್: ನಿಮ್ಮ ಟೋಕನ್ ${token} ಅನ್ನು ${centre} ನಲ್ಲಿ ಬುಕ್ ಮಾಡಲಾಗಿದೆ. ನಿರೀಕ್ಷಿತ ಆಗಮನ: ${window}.`,
-    status: (token, centre, stage) =>
-      `ಕಿಸಾನ್‌ಸಿಂಕ್: ${centre} ನಲ್ಲಿ ಟೋಕನ್ ${token} — ಸ್ಥಿತಿ: ${stage}.`,
+    booking: (token, centre, window, crop, qty) =>
+      `ಕಿಸಾನ್‌ಸಿಂಕ್: ನಿಮ್ಮ ಟೋಕನ್ ${token}${crop ? ` (${crop}${qty ? ` ${qty} ಕ್ವಿಂಟಾಲ್` : ""})` : ""} ಅನ್ನು ${centre} ನಲ್ಲಿ ಬುಕ್ ಮಾಡಲಾಗಿದೆ. ನಿರೀಕ್ಷಿತ ಆಗಮನ: ${window}.`,
+    status: (token, centre, stage, crop) =>
+      `ಕಿಸಾನ್‌ಸಿಂಕ್: ${centre} ನಲ್ಲಿ ಟೋಕನ್ ${token}${crop ? ` (${crop})` : ""} — ಸ್ಥಿತಿ: ${stage}.`,
     payment: (token, centre, amount, ref) =>
       `ಕಿಸಾನ್‌ಸಿಂಕ್: ${centre} ನಲ್ಲಿ ಟೋಕನ್ ${token} ಗಾಗಿ ${amount} ಪಾವತಿ ಆಗಿದೆ. ಉಲ್ಲೇಖ: ${ref}.`,
   },
   hi: {
-    booking: (token, centre, window) =>
-      `किसानसिंक: आपका टोकन ${token} ${centre} पर बुक हुआ। अपेक्षित आगमन: ${window}।`,
-    status: (token, centre, stage) =>
-      `किसानसिंक: ${centre} पर टोकन ${token} — स्थिति: ${stage}।`,
+    booking: (token, centre, window, crop, qty) =>
+      `किसानसिंक: आपका टोकन ${token}${crop ? ` (${crop}${qty ? ` ${qty} क्विंटल` : ""})` : ""} ${centre} पर बुक हुआ। अपेक्षित आगमन: ${window}।`,
+    status: (token, centre, stage, crop) =>
+      `किसानसिंक: ${centre} पर टोकन ${token}${crop ? ` (${crop})` : ""} — स्थिति: ${stage}।`,
     payment: (token, centre, amount, ref) =>
       `किसानसिंक: ${centre} में टोकन ${token} का ${amount} भुगतान हुआ। संदर्भ: ${ref}।`,
   },

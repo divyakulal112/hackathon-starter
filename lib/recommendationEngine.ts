@@ -5,29 +5,28 @@
  *
  *   totalScore = distanceScore + queueScore + waitScore +
  *                capacityScore + eligibilityScore
- *
- * Weights live in lib/constants.ts (ENGINE_WEIGHTS) so judges can tune them.
+ * Configuration and weights live in lib/constants.ts (RECOMMENDATION_CONFIG / ENGINE_WEIGHTS).
  * Location calculation uses the Haversine formula from the farmer's selected
- * location (village / taluk / district coordinates) to each procurement centre.
+ * location to each procurement centre.
  */
 
 import {
   ARRIVAL_WINDOW_MINUTES,
-  DISTANCE_BEST_KM,
-  DISTANCE_WORST_KM,
   ENGINE_WEIGHTS,
   LOAD_BUSY,
   LOAD_OPTIMAL,
-  MAX_ALTERNATIVES,
+  RECOMMENDATION_CONFIG,
   SERVICE_RADIUS_KM,
 } from "./constants";
 import { getFarmerLocation } from "./mockData";
 import { calculateWaitMinutes, formatWaitMinutes } from "./waitTime";
+import { calculateHaversineDistanceKm } from "./geo";
 import type {
   Centre,
   CentreEvaluation,
   ExplanationFragments,
   FarmerLocation,
+  Location,
   ProcurementRequest,
   RecommendationResult,
   WhyChecklistItem,
@@ -87,53 +86,179 @@ export function formatTime12h(hhmm: string): string {
 /** Adds minutes to a "HH:mm" string, returning "HH:mm". */
 function addMinutes(hhmm: string, minutes: number): string {
   const [h, m] = hhmm.split(":").map(Number);
-  const total = (h || 0) * 60 + (m || 0) + minutes;
+  const safeMinutes = Number.isFinite(minutes) ? Math.max(0, minutes) : 0;
+  const total = (h || 0) * 60 + (m || 0) + safeMinutes;
   const rem = total % 1440;
   const hh = String(Math.floor(rem / 60)).padStart(2, "0");
   const mm = String(rem % 60).padStart(2, "0");
   return `${hh}:${mm}`;
 }
 
+/** Validates whether coordinates are valid finite numbers within earthly bounds. */
+function isValidCoordinate(lat?: number, lon?: number): boolean {
+  return (
+    typeof lat === "number" &&
+    typeof lon === "number" &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  );
+}
+
 /** The reusable Coordination Engine entry point. */
 export function calculateCentreRecommendation(
   request: ProcurementRequest,
   centres: Centre[],
+  farmerLocation?: Location | null,
 ): RecommendationResult {
-  const farmerLocation = getFarmerLocation(request.locationId);
+  // If location not passed, resolve from locationId or village
+  if (farmerLocation === undefined) {
+    if (request.locationId) {
+      farmerLocation = getFarmerLocation(request.locationId);
+    } else if (request.village) {
+      farmerLocation = getFarmerLocation(request.village);
+    }
+  }
 
-  const evaluations = centres
-    .map((centre) => evaluateCentre(centre, request, farmerLocation))
+  // If location was explicitly given as null (unsupported/unresolved location)
+  if (farmerLocation === null) {
+    return {
+      best: null,
+      evaluations: [],
+      nearbyEvaluations: [],
+      distantAlternatives: [],
+      explanation: "",
+      explanationFragments: null,
+      locationSupported: false,
+      resolvedLocation: null,
+      noSuitableCentreReason: "Location not recognized. Please select a valid location from the search list.",
+    };
+  }
+
+  // If farmer location is provided but coordinates are invalid or out of range
+  if (
+    farmerLocation !== undefined &&
+    !isValidCoordinate(farmerLocation.latitude, farmerLocation.longitude)
+  ) {
+    return {
+      best: null,
+      evaluations: [],
+      nearbyEvaluations: [],
+      distantAlternatives: [],
+      explanation: "",
+      explanationFragments: null,
+      locationSupported: false,
+      resolvedLocation: farmerLocation,
+      noSuitableCentreReason: "Invalid geographic coordinates for location.",
+    };
+  }
+
+  const hasValidFarmerCoords =
+    farmerLocation !== undefined &&
+    isValidCoordinate(farmerLocation.latitude, farmerLocation.longitude);
+
+  if (!centres || centres.length === 0) {
+    return {
+      best: null,
+      evaluations: [],
+      nearbyEvaluations: [],
+      distantAlternatives: [],
+      explanation: "",
+      explanationFragments: null,
+      locationSupported: true,
+      resolvedLocation: farmerLocation ?? null,
+      noSuitableCentreReason: "No procurement centres currently available.",
+    };
+  }
+
+  const allEvaluations: CentreEvaluation[] = centres.map((centre) => {
+    // If coordinates are valid for both farmer and centre, calculate exact Haversine distance
+    const hasValidCentreCoords = isValidCoordinate(centre.latitude, centre.longitude);
+
+    let distanceKm: number;
+    if (hasValidFarmerCoords && hasValidCentreCoords) {
+      distanceKm = round1(
+        calculateHaversineDistanceKm(
+          farmerLocation!.latitude,
+          farmerLocation!.longitude,
+          centre.latitude,
+          centre.longitude,
+        ),
+      );
+    } else {
+      distanceKm = typeof centre.distanceKm === "number" && Number.isFinite(centre.distanceKm)
+        ? centre.distanceKm
+        : 999;
+    }
+
+    const isWithinServiceRadius = distanceKm <= RECOMMENDATION_CONFIG.serviceRadiusKm;
+
+    const dynamicCentre: Centre = {
+      ...centre,
+      distanceKm,
+    };
+
+    return evaluateCentre(dynamicCentre, request, isWithinServiceRadius);
+  });
+
+  // Separate nearby eligible/evaluated centres from distant alternatives
+  const nearbyEvaluations = allEvaluations
+    .filter((e) => e.isWithinServiceRadius)
     .sort((a, b) => {
-      // 1. Eligible + in service area comes first
-      const aInArea = a.eligibility === "eligible" && a.withinServiceArea;
-      const bInArea = b.eligibility === "eligible" && b.withinServiceArea;
-      if (aInArea !== bInArea) return aInArea ? -1 : 1;
-
-      // 2. Eligible comes before ineligible
+      // 1. Eligible comes before ineligible
       if (a.eligibility !== b.eligibility) {
         return a.eligibility === "eligible" ? -1 : 1;
       }
 
-      // 3. Higher total score wins
+      // 2. Higher total score wins
       return b.score.totalScore - a.score.totalScore;
     });
 
-  // Recommended centre MUST be eligible AND within the regional service area
-  const best =
-    evaluations.find((e) => e.eligibility === "eligible" && e.withinServiceArea) ?? null;
+  const distantAlternatives = allEvaluations
+    .filter((e) => !e.isWithinServiceRadius)
+    .sort((a, b) => a.centre.distanceKm - b.centre.distanceKm);
+
+  // Combined sorted list: nearby first, then distant
+  const evaluations = [...nearbyEvaluations, ...distantAlternatives];
+
+  // Primary recommendation: MUST be within service radius, eligible, and have capacity
+  const eligibleNearby = nearbyEvaluations.filter(
+    (e) => e.eligibility === "eligible" && e.remainingCapacity > 0 && e.centre.processingRatePerHour > 0,
+  );
+
+  const best = eligibleNearby.length > 0 ? eligibleNearby[0] : null;
 
   const alternatives = evaluations
     .filter((e) => e !== best && e.eligibility === "eligible")
-    .slice(0, MAX_ALTERNATIVES);
+    .slice(0, 5);
+
+  let noSuitableCentreReason: string | undefined;
+  if (!best) {
+    if (nearbyEvaluations.length === 0) {
+      noSuitableCentreReason = `No suitable procurement centre found within the available service area (${RECOMMENDATION_CONFIG.serviceRadiusKm} km).`;
+    } else if (!nearbyEvaluations.some((e) => e.eligibility === "eligible")) {
+      noSuitableCentreReason = `No procurement centre within the service area (${RECOMMENDATION_CONFIG.serviceRadiusKm} km) currently accepts ${request.crop}.`;
+    } else {
+      noSuitableCentreReason = `All eligible procurement centres within the service area (${RECOMMENDATION_CONFIG.serviceRadiusKm} km) are currently at full capacity.`;
+    }
+  }
 
   return {
     best,
     evaluations,
+    nearbyEvaluations,
+    distantAlternatives,
     alternatives,
     withinServiceArea: best !== null,
     farmerLocation,
-    explanation: best ? composeEnglishFallback(best) : "",
+    explanation: best ? composeEnglishFallback(best) : (noSuitableCentreReason ?? ""),
     explanationFragments: best ? buildExplanationFragments(best) : null,
+    locationSupported: true,
+    resolvedLocation: farmerLocation ?? null,
+    noSuitableCentreReason,
   };
 }
 
@@ -161,38 +286,46 @@ function composeEnglishFallback(best: CentreEvaluation): string {
 function evaluateCentre(
   centre: Centre,
   request: ProcurementRequest,
-  farmerLocation: FarmerLocation,
+  isWithinServiceRadius: boolean,
 ): CentreEvaluation {
-  const distanceKm = haversineDistanceKm(
-    farmerLocation.latitude,
-    farmerLocation.longitude,
-    centre.latitude,
-    centre.longitude,
-  );
-  const withinServiceArea = distanceKm <= SERVICE_RADIUS_KM;
-
-  const wait = calculateWaitMinutes(centre.queueCount, centre.processingRatePerHour);
-  const remainingCapacity = Math.max(0, centre.capacityPerDay - centre.bookedToday);
+  const distanceKm =
+    typeof centre.distanceKm === "number" && Number.isFinite(centre.distanceKm)
+      ? centre.distanceKm
+      : 999;
+  const withinServiceArea = isWithinServiceRadius;
+  const processingRate = Math.max(0, centre.processingRatePerHour || 0);
+  const wait =
+    processingRate > 0
+      ? calculateWaitMinutes(centre.queueCount, processingRate)
+      : Infinity;
+  const capacityPerDay = Math.max(0, centre.capacityPerDay || 0);
+  const bookedToday = Math.max(0, centre.bookedToday || 0);
+  const remainingCapacity = Math.max(0, capacityPerDay - bookedToday);
   const capacityPct =
-    centre.capacityPerDay > 0
-      ? Math.round((centre.bookedToday / centre.capacityPerDay) * 100)
+    capacityPerDay > 0
+      ? Math.round((bookedToday / capacityPerDay) * 100)
       : 100;
-  const eligible = centre.eligibleCrops.includes(request.crop);
+  const eligible =
+    Array.isArray(centre.eligibleCrops) && centre.eligibleCrops.includes(request.crop);
 
-  // Normalise each factor against centralized reference bands (0..1)
-  const distanceNorm = normalise(distanceKm, DISTANCE_BEST_KM, DISTANCE_WORST_KM);
-  const queueNorm = normalise(centre.queueCount, 0, 30);
-  const waitNorm = Number.isFinite(wait) ? normalise(wait, 0, 240) : 0;
-  const capacityNorm = normalise(remainingCapacity, 0, 60);
+  // Each factor is normalised against fixed reference ranges (0..1),
+  // then multiplied by its weight.
+  const distanceNorm = isWithinServiceRadius
+    ? normalise(distanceKm, 0, RECOMMENDATION_CONFIG.referenceDistanceMaxKm)
+    : 0;
+  const queueNorm = normalise(Math.max(0, centre.queueCount || 0), 0, 30); // 0 queue great, 30 bad
+  const waitNorm = Number.isFinite(wait) ? normalise(wait, 0, 240) : 0; // 4 hr wait worst
+  const capacityNorm = normalise(remainingCapacity, 0, Math.max(1, capacityPerDay)); // more remaining is better
 
   const score = {
-    distanceScore: round1(distanceNorm * ENGINE_WEIGHTS.distanceWeight),
-    queueScore: round1(queueNorm * ENGINE_WEIGHTS.queueWeight),
-    waitScore: round1(waitNorm * ENGINE_WEIGHTS.waitTimeWeight),
-    capacityScore: round1(capacityNorm * ENGINE_WEIGHTS.capacityWeight),
-    eligibilityScore: eligible ? ENGINE_WEIGHTS.eligibilityWeight : 0,
+    distanceScore: round1(distanceNorm * RECOMMENDATION_CONFIG.distanceWeight),
+    queueScore: round1(queueNorm * RECOMMENDATION_CONFIG.queueWeight),
+    waitScore: round1(waitNorm * RECOMMENDATION_CONFIG.waitTimeWeight),
+    capacityScore: round1(capacityNorm * RECOMMENDATION_CONFIG.capacityWeight),
+    eligibilityScore: eligible ? RECOMMENDATION_CONFIG.eligibilityWeight : 0,
     totalScore: 0,
   };
+
   score.totalScore = round1(
     score.distanceScore +
       score.queueScore +
@@ -201,12 +334,12 @@ function evaluateCentre(
       score.eligibilityScore,
   );
 
-  // Recommended arrival window: current time + wait clamped to centre hours
+  // ---- Recommended arrival window: now + wait (kept inside centre hours).
   const waitMinutes = Number.isFinite(wait) ? wait : 0;
-  const closingMin = toMinutes(centre.closesAt);
-  const openingMin = toMinutes(centre.opensAt);
+  const closingMin = toMinutes(centre.closesAt || "18:00");
+  const openingMin = toMinutes(centre.opensAt || "08:00");
   const rawStart = toMinutes(addMinutes(nowRoundedTo5(), waitMinutes));
-  const startMin = Math.max(openingMin, Math.min(rawStart, closingMin - ARRIVAL_WINDOW_MINUTES));
+  const startMin = Math.max(openingMin, Math.min(rawStart, Math.max(openingMin, closingMin - ARRIVAL_WINDOW_MINUTES)));
   const endMin = startMin + ARRIVAL_WINDOW_MINUTES;
   const start = formatHHMM(startMin);
   const end = formatHHMM(endMin);
@@ -221,7 +354,7 @@ function evaluateCentre(
     {
       key: "checklistWithinServiceArea",
       passed: withinServiceArea,
-      detail: `${distanceKm} km (max ${SERVICE_RADIUS_KM} km)`,
+      detail: `${distanceKm} km (max ${RECOMMENDATION_CONFIG.serviceRadiusKm} km)`,
     },
     {
       key: "checklistLowQueue",
@@ -239,6 +372,7 @@ function evaluateCentre(
     wait,
     remainingCapacity,
     eligible,
+    isWithinServiceRadius,
     distanceScore: score.distanceScore,
     queueScore: score.queueScore,
     waitScore: score.waitScore,
@@ -253,6 +387,7 @@ function evaluateCentre(
     capacityPct,
     estimatedWaitMinutes: wait,
     remainingCapacity,
+    isWithinServiceRadius,
     arrivalWindowStart: start,
     arrivalWindowEnd: end,
     arrivalWindowLabel,
@@ -266,6 +401,7 @@ interface ReasonInput {
   wait: number;
   remainingCapacity: number;
   eligible: boolean;
+  isWithinServiceRadius: boolean;
   distanceScore: number;
   queueScore: number;
   waitScore: number;
@@ -280,10 +416,12 @@ function buildReasons(
 ): string[] {
   const reasons: string[] = [];
   reasons.push(
-    `${distanceKm} km away — distance score ${r.distanceScore}/${ENGINE_WEIGHTS.distanceWeight}.`,
+    `${distanceKm} km away (${r.isWithinServiceRadius ? "within service radius" : "outside service radius"}) — distance score ${r.distanceScore}/${ENGINE_WEIGHTS.distanceWeight}.`,
   );
   reasons.push(
-    `${centre.queueCount} farmers in queue, ~${formatWaitMinutes(r.wait)} wait — wait score ${r.waitScore}/${ENGINE_WEIGHTS.waitTimeWeight}.`,
+    Number.isFinite(r.wait)
+      ? `${centre.queueCount} farmers in queue, ~${formatWaitMinutes(r.wait)} wait — wait score ${r.waitScore}/${ENGINE_WEIGHTS.waitTimeWeight}.`
+      : `Centre is currently not processing arrivals (rate: 0).`,
   );
   reasons.push(
     `${r.remainingCapacity} of ${centre.capacityPerDay} slots remaining — capacity score ${r.capacityScore}/${ENGINE_WEIGHTS.capacityWeight}.`,
@@ -336,7 +474,7 @@ function nowRoundedTo5(): string {
 
 /** "HH:mm" → minutes since midnight. */
 function toMinutes(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
+  const [h, m] = (hhmm || "00:00").split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
 }
 

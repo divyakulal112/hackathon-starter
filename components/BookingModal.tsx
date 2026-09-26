@@ -2,19 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, WifiOff, X } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAppState } from "@/context/AppStateContext";
 import type { CentreEvaluation, ProcurementRequest } from "@/lib/types";
-import { CROP_RATES_INR_PER_QUINTAL } from "@/lib/constants";
+import { getMarketPrice, calculateEstimatedValue } from "@/lib/marketPrices/marketPriceService";
+import type { MarketPriceResult } from "@/lib/marketPrices/types";
 
 /**
  * BookingModal — confirm-before-book dialog.
- *
- * Reliability contract (Phase 1.5):
- * - `submitting` is ALWAYS cleared, even if onConfirm throws (finally block).
- * - A timer leak guard clears the timeout on unmount.
- * - Double-clicks during submission are ignored.
- * - Failures show a retryable error instead of a stuck disabled button.
+ * Supports both online direct booking and offline-first queueing.
  */
 export default function BookingModal({
   evaluation,
@@ -24,13 +21,67 @@ export default function BookingModal({
 }: {
   evaluation: CentreEvaluation;
   request: ProcurementRequest;
-  onConfirm: () => void;
+  onConfirm: (modalPrice?: number | null) => void;
   onClose: () => void;
 }) {
   const { t } = useLanguage();
+  const { isOffline } = useAppState();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [priceResult, setPriceResult] = useState<MarketPriceResult | null>(null);
+  const [priceLoading, setPriceLoading] = useState(true);
   const timerRef = useRef<number | null>(null);
+
+  // Fetch real Government market price
+  useEffect(() => {
+    let isMounted = true;
+    setPriceLoading(true);
+
+    getMarketPrice(
+      {
+        crop: request.crop,
+        state: evaluation.centre.state,
+        district: evaluation.centre.district,
+        market: evaluation.centre.name,
+        centreId: evaluation.centre.id,
+      },
+      isOffline,
+    )
+      .then((res) => {
+        if (isMounted) {
+          setPriceResult(res);
+          setPriceLoading(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setPriceResult({
+            record: null,
+            modalPrice: null,
+            priceUnit: "₹/Quintal",
+            source: "DATA_GOV_IN",
+            status: "UNAVAILABLE",
+            matchType: "UNAVAILABLE",
+            isFallback: false,
+            message: isOffline
+              ? t("marketPriceUnavailableOffline")
+              : t("priceUnavailableDesc"),
+            fetchedAt: Date.now(),
+          });
+          setPriceLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    request.crop,
+    evaluation.centre.state,
+    evaluation.centre.district,
+    evaluation.centre.name,
+    isOffline,
+  ]);
 
   // Clear any pending timer when the modal unmounts so no late callback
   // can flip state after the dialog is gone.
@@ -42,8 +93,11 @@ export default function BookingModal({
     };
   }, []);
 
-  const rate = CROP_RATES_INR_PER_QUINTAL[request.crop] ?? 2000;
-  const amount = rate * request.quantityQuintals;
+  const modalPrice = priceResult?.modalPrice ?? null;
+  const estimatedAmount = calculateEstimatedValue(
+    modalPrice,
+    request.quantityQuintals,
+  );
 
   function handleConfirm() {
     if (submitting) return; // double-click guard
@@ -51,7 +105,7 @@ export default function BookingModal({
     setSubmitting(true);
     timerRef.current = window.setTimeout(() => {
       try {
-        onConfirm();
+        onConfirm(modalPrice);
         // Parent closes the modal on success; resetting state here is still
         // safe if it stays mounted for another booking.
       } catch (err) {
@@ -102,11 +156,76 @@ export default function BookingModal({
             value={`${request.quantityQuintals} ${t("quintals")}`}
           />
           <Row
+            label={t("marketRate")}
+            value={
+              priceLoading
+                ? t("loadingMarketPrice")
+                : modalPrice != null
+                ? `₹${modalPrice.toLocaleString("en-IN")} / ${t("quintals")}`
+                : t("priceUnavailable")
+            }
+          />
+          <Row
             label={t("estimatedAmount")}
-            value={`₹${amount.toLocaleString("en-IN")}`}
+            value={
+              priceLoading
+                ? "…"
+                : estimatedAmount != null
+                ? `₹${estimatedAmount.toLocaleString("en-IN")}`
+                : t("priceUnavailable")
+            }
             strong
           />
         </dl>
+
+        {priceResult?.record ? (
+          <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-xs text-emerald-950">
+            <div className="flex items-center justify-between font-semibold text-emerald-900">
+              <span>
+                {isOffline || priceResult.status === "STALE"
+                  ? t("lastKnownMarketRate")
+                  : t("mandiPriceLabel")}
+              </span>
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                {priceResult.matchType === "EXACT_MARKET"
+                  ? "Mandi Match"
+                  : priceResult.matchType === "DISTRICT_FALLBACK"
+                  ? "District Rate"
+                  : "State Rate"}
+              </span>
+            </div>
+            <div className="mt-1.5 grid grid-cols-2 gap-1 text-[11px] text-emerald-800">
+              <div>
+                <span className="text-emerald-600">Mandi: </span>
+                {priceResult.record.market}
+              </div>
+              <div>
+                <span className="text-emerald-600">Date: </span>
+                {priceResult.record.arrivalDate}
+              </div>
+            </div>
+            <div className="mt-1 text-[10px] text-emerald-700/80">
+              {t("govSourceNotice")}
+            </div>
+          </div>
+        ) : !priceLoading ? (
+          <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-xs text-gray-600">
+            <p className="font-medium text-gray-700">{t("priceUnavailable")}</p>
+            <p className="mt-0.5 text-[11px]">
+              {priceResult?.message || t("priceUnavailableDesc")}
+            </p>
+          </div>
+        ) : null}
+
+        {isOffline && (
+          <div
+            role="status"
+            className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"
+          >
+            <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+            <p>{t("offlineModalNotice")}</p>
+          </div>
+        )}
 
         {error && (
           <div
@@ -142,9 +261,13 @@ export default function BookingModal({
             type="button"
             onClick={handleConfirm}
             disabled={submitting}
-            className="min-h-12 flex-1 rounded-xl bg-emerald-600 px-4 font-semibold text-white hover:bg-emerald-700 active:bg-emerald-800 disabled:cursor-wait disabled:opacity-60"
+            className={`min-h-12 flex-1 rounded-xl px-4 font-semibold text-white disabled:cursor-wait disabled:opacity-60 ${
+              isOffline
+                ? "bg-amber-600 hover:bg-amber-700 active:bg-amber-800"
+                : "bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800"
+            }`}
           >
-            {submitting ? "…" : t("confirmAndBook")}
+            {submitting ? "…" : isOffline ? t("saveOfflineBtn") : t("confirmAndBook")}
           </button>
         </div>
       </div>

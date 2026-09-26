@@ -32,12 +32,21 @@ import type {
   SmsMessage,
 } from "@/lib/types";
 import {
-  CROP_RATES_INR_PER_QUINTAL,
   DEMO_FARMER,
   TRACKING_STAGES,
 } from "@/lib/constants";
 import { MOCK_APPOINTMENTS, MOCK_CENTRES } from "@/lib/mockData";
 import { getDataSource } from "@/lib/data";
+import type { QueuedOfflineRequest, SyncState } from "@/lib/offline/types";
+import {
+  getQueuedRequests,
+  saveQueuedRequest,
+  updateQueuedRequest,
+  deleteQueuedRequest,
+  getLastKnownSyncTime,
+  setLastKnownSyncTime,
+} from "@/lib/offline/offlineStorage";
+import { processOfflineQueue, type SyncResult } from "@/lib/offline/syncManager";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -47,6 +56,7 @@ export interface BookTokenInput {
   centreId: string;
   request: ProcurementRequest;
   arrivalWindow: string;
+  modalPrice?: number | null;
 }
 
 interface AppStateContextValue {
@@ -57,6 +67,21 @@ interface AppStateContextValue {
   isOffline: boolean;
   /** True when the offline banner should be shown (demo toggle or browser offline). */
   usingCachedData: boolean;
+
+  // Offline-first additions
+  syncState: SyncState;
+  queuedRequests: QueuedOfflineRequest[];
+  lastKnownSyncTime: number;
+  saveOfflineBooking: (payload: {
+    centreId?: string;
+    centreName?: string;
+    arrivalWindow?: string;
+    request: ProcurementRequest;
+    modalPrice?: number | null;
+  }) => Promise<QueuedOfflineRequest>;
+  cancelOfflineRequest: (requestId: string) => Promise<void>;
+  retryOfflineRequest: (requestId: string) => Promise<void>;
+  triggerSync: () => Promise<SyncResult>;
 
   // Farmer actions
   bookToken: (input: BookTokenInput) => Appointment;
@@ -98,12 +123,16 @@ function stageIndexForStatus(status: AppointmentStatus): number {
   return idx >= 0 ? idx : 0;
 }
 
-function appointmentAmount(crop: string, qty: number): number {
-  return (CROP_RATES_INR_PER_QUINTAL[crop] ?? 2000) * qty;
+function appointmentAmount(modalPrice: number | null | undefined, qty: number): number | null {
+  if (modalPrice == null || modalPrice <= 0 || Number.isNaN(modalPrice)) {
+    return null;
+  }
+  return Math.round(modalPrice * qty);
 }
 
 function makeSms(partial: Omit<SmsMessage, "id" | "createdAt">): SmsMessage {
   return {
+    deliveryStatus: "received",
     ...partial,
     id: `sms-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     createdAt: Date.now(),
@@ -137,9 +166,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [centres, setCentres] = useState<Centre[]>(MOCK_CENTRES);
   const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS);
   const [smsOutbox, setSmsOutbox] = useState<SmsMessage[]>([]);
-  const [isOffline, setIsOffline] = useState(false);
+  const [browserOffline, setBrowserOffline] = useState(false);
+  const [offlineDemo, setOfflineDemoState] = useState(false);
   const [usingCachedData, setUsingCachedData] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>("ONLINE");
+  const [queuedRequests, setQueuedRequests] = useState<QueuedOfflineRequest[]>([]);
+  const [lastKnownSyncTime, setSyncTimeState] = useState<number>(Date.now());
   const [hydrated, setHydrated] = useState(false);
+
+  const isOffline = browserOffline || offlineDemo;
 
   // The data source is resolved once per browser session (see lib/data).
   const sourceRef = useRef(getDataSource());
@@ -212,29 +247,61 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  // ---- Browser online/offline events.
+  // ---- Browser online/offline events & offline queue hydration
   useEffect(() => {
-    const update = () => setIsOffline(!navigator.onLine);
-    update();
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
+    void getQueuedRequests().then((reqs) => setQueuedRequests(reqs));
+    setSyncTimeState(getLastKnownSyncTime());
+
+    const handleOnline = () => {
+      setBrowserOffline(false);
+      setUsingCachedData(false);
+    };
+    const handleOffline = () => {
+      setBrowserOffline(true);
+      setUsingCachedData(true);
+      setSyncState("OFFLINE");
+    };
+
+    if (typeof navigator !== "undefined") {
+      const offline = !navigator.onLine;
+      setBrowserOffline(offline);
+      if (offline) setSyncState("OFFLINE");
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
     return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
-  // ---- Backend writes (fire-and-forget with logged failures). The UI stays
-  // optimistic; in Supabase mode realtime refetches reconcile remote truth.
+  // ---- Backend writes with automatic state reconciliation on error.
+  // The UI stays optimistic; if persistence fails, reconcileState resyncs from server.
+  const reconcileState = useCallback(async () => {
+    try {
+      const loaded = await sourceRef.current.load();
+      if (loaded) {
+        setCentres(loaded.centres);
+        setAppointments(loaded.appointments);
+        setSmsOutbox(loaded.smsOutbox);
+      }
+    } catch (err) {
+      console.error("[KisanSync] State reconciliation failed; showing cached/offline view", err);
+      setUsingCachedData(true);
+    }
+  }, []);
+
   const persistBooking = useCallback(
     (appointment: Appointment, centreAfter: Centre, request: ProcurementRequest) => {
       void sourceRef.current
         .bookToken({ centreId: appointment.centreId, request, appointment, centreAfter })
-        .catch((err) =>
-          console.error("[KisanSync] bookToken persist failed", err),
-        );
+        .catch((err) => {
+          console.error("[KisanSync] bookToken persist failed; reconciling state", err);
+          void reconcileState();
+        });
     },
-    [],
+    [reconcileState],
   );
 
   // ---- Farmer actions ----------------------------------------------------
@@ -262,7 +329,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         status: "slot_booked",
         stageIndex: stageIndexForStatus("slot_booked"),
         estimatedAmountInr: appointmentAmount(
-          input.request.crop,
+          input.modalPrice,
           input.request.quantityQuintals,
         ),
       };
@@ -286,6 +353,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           kind: "booking",
           tokenNumber: token,
           centreName: centre.name,
+          crop: input.request.crop,
+          quantityQuintals: input.request.quantityQuintals,
+          farmerId: DEMO_FARMER.id,
           arrivalWindow: input.arrivalWindow,
         }),
       ]);
@@ -308,13 +378,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         };
         void sourceRef.current
           .updateAppointmentStatus(updated)
-          .catch((err) =>
-            console.error("[KisanSync] cancelBooking persist failed", err),
-          );
+          .catch((err) => {
+            console.error("[KisanSync] cancelBooking persist failed; reconciling state", err);
+            void reconcileState();
+          });
         return updated;
       }),
     );
-  }, []);
+  }, [reconcileState]);
 
   // ---- Centre actions ----------------------------------------------------
 
@@ -345,6 +416,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           kind: status === "payment_received" ? "payment" : "status",
           tokenNumber: target.tokenNumber,
           centreName: target.centreName,
+          crop: target.crop,
+          quantityQuintals: target.quantityQuintals,
+          farmerId: target.farmerId,
           stageKey: TRACKING_STAGES[stageIndexForStatus(status)]?.key,
           amountInr: target.estimatedAmountInr,
           paymentRef,
@@ -353,11 +427,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       void sourceRef.current
         .updateAppointmentStatus(updated)
-        .catch((err) =>
-          console.error("[KisanSync] status persist failed", err),
-        );
+        .catch((err) => {
+          console.error("[KisanSync] status persist failed; reconciling state", err);
+          void reconcileState();
+        });
     },
-    [appointments],
+    [appointments, reconcileState],
   );
 
   const advanceAppointment = useCallback(
@@ -391,6 +466,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           kind: next === "payment_received" ? "payment" : "status",
           tokenNumber: target.tokenNumber,
           centreName: target.centreName,
+          crop: target.crop,
+          quantityQuintals: target.quantityQuintals,
+          farmerId: target.farmerId,
           stageKey: TRACKING_STAGES[stageIndexForStatus(next)]?.key,
           amountInr: target.estimatedAmountInr,
           paymentRef,
@@ -399,11 +477,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       void sourceRef.current
         .updateAppointmentStatus(updated)
-        .catch((err) =>
-          console.error("[KisanSync] advance persist failed", err),
-        );
+        .catch((err) => {
+          console.error("[KisanSync] advance persist failed; reconciling state", err);
+          void reconcileState();
+        });
     },
-    [appointments],
+    [appointments, reconcileState],
   );
 
   const surgeQueue = useCallback((centreId: string, add: number) => {
@@ -419,10 +498,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     );
     void sourceRef.current
       .surgeQueue(centreId, newQueueCount)
-      .catch((err) =>
-        console.error("[KisanSync] surgeQueue persist failed", err),
-      );
-  }, []);
+      .catch((err) => {
+        console.error("[KisanSync] surgeQueue persist failed; reconciling state", err);
+        void reconcileState();
+      });
+  }, [reconcileState]);
 
   /**
    * Full demo reset — restores seed centres (queue + capacity + bookedToday),
@@ -435,12 +515,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setCentres(seed.centres);
     setAppointments(seed.appointments);
     setSmsOutbox([]);
+    void getQueuedRequests().then((reqs) => {
+      for (const r of reqs) {
+        void deleteQueuedRequest(r.requestId);
+      }
+      setQueuedRequests([]);
+    });
     void sourceRef.current
       .resetDemoData({ centres: seed.centres, appointments: seed.appointments, smsOutbox: [] })
-      .catch((err) =>
-        console.error("[KisanSync] resetDemoData persist failed", err),
-      );
-  }, []);
+      .catch((err) => {
+        console.error("[KisanSync] resetDemoData persist failed; reconciling state", err);
+        void reconcileState();
+      });
+  }, [reconcileState]);
 
   /** Kept for backwards compatibility — delegates to the full reset. */
   const resetQueue = useCallback((_centreId?: string) => {
@@ -454,26 +541,211 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const updated: Appointment = { ...a, archived: true };
         void sourceRef.current
           .archiveAppointment(updated)
-          .catch((err) =>
-            console.error("[KisanSync] archive persist failed", err),
-          );
+          .catch((err) => {
+            console.error("[KisanSync] archive persist failed; reconciling state", err);
+            void reconcileState();
+          });
         return updated;
       }),
     );
+  }, [reconcileState]);
+
+  // ---- Offline Queue Management & Synchronisation ------------------------
+
+  const triggerSync = useCallback(async (): Promise<SyncResult> => {
+    if (isOffline) {
+      return { succeeded: [], rejected: [], failed: [] };
+    }
+
+    setSyncState("SYNCING");
+
+    try {
+      const result = await processOfflineQueue({
+        getCentres: () => stateRef.current.centres,
+        getAppointments: () => stateRef.current.appointments,
+        bookConfirmedToken: ({ requestId, centreId, request, arrivalWindow, modalPrice }) => {
+          const currentCentres = stateRef.current.centres;
+          const currentAppointments = stateRef.current.appointments;
+          const centre =
+            currentCentres.find((c) => c.id === centreId) || currentCentres[0];
+          const token = nextTokenNumber(currentAppointments);
+          const appointment: Appointment = {
+            id: `apt-${token.toLowerCase()}-${requestId}`,
+            tokenNumber: token,
+            farmerId: DEMO_FARMER.id,
+            farmerName: DEMO_FARMER.name,
+            centreId: centre.id,
+            centreName: centre.name,
+            crop: request.crop,
+            quantityQuintals: request.quantityQuintals,
+            village: DEMO_FARMER.village,
+            arrivalWindow,
+            bookedAt: new Date().toISOString(),
+            status: "slot_booked",
+            stageIndex: stageIndexForStatus("slot_booked"),
+            estimatedAmountInr: appointmentAmount(
+              modalPrice,
+              request.quantityQuintals,
+            ),
+          };
+
+          const centreAfter: Centre = {
+            ...centre,
+            bookedToday: centre.bookedToday + 1,
+            queueCount: centre.queueCount + 1,
+          };
+
+          const newAppointments = [...currentAppointments, appointment];
+          const newCentres = currentCentres.map((c) =>
+            c.id === centre.id ? centreAfter : c,
+          );
+          const newSms = makeSms({
+            kind: "booking",
+            tokenNumber: token,
+            centreName: centre.name,
+            crop: request.crop,
+            quantityQuintals: request.quantityQuintals,
+            farmerId: DEMO_FARMER.id,
+            arrivalWindow,
+          });
+
+          // Update ref immediately so subsequent items in the loop see latest state
+          stateRef.current = {
+            centres: newCentres,
+            appointments: newAppointments,
+            smsOutbox: [...stateRef.current.smsOutbox, newSms],
+          };
+
+          setAppointments(newAppointments);
+          setCentres(newCentres);
+          setSmsOutbox((prev) => [...prev, newSms]);
+
+          persistBooking(appointment, centreAfter, {
+            crop: request.crop,
+            quantityQuintals: request.quantityQuintals,
+            village: request.village,
+            preferredTime: request.preferredTime,
+          });
+
+          return appointment;
+        },
+      });
+
+      const updatedQueue = await getQueuedRequests();
+      setQueuedRequests(updatedQueue);
+
+      const now = Date.now();
+      setLastKnownSyncTime(now);
+      setSyncTimeState(now);
+
+      if (result.succeeded.length > 0 || result.rejected.length > 0) {
+        setSyncState("SYNCED");
+        setTimeout(() => {
+          setSyncState("ONLINE");
+        }, 3500);
+      } else {
+        setSyncState("ONLINE");
+      }
+
+      return result;
+    } catch (err) {
+      console.error("[KisanSync] sync failed", err);
+      setSyncState("ONLINE");
+      return { succeeded: [], rejected: [], failed: [] };
+    }
+  }, [isOffline, persistBooking]);
+
+  const saveOfflineBooking = useCallback(
+    async (payload: {
+      centreId?: string;
+      centreName?: string;
+      arrivalWindow?: string;
+      request: ProcurementRequest;
+      modalPrice?: number | null;
+    }): Promise<QueuedOfflineRequest> => {
+      const requestId = `req-off-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const req: QueuedOfflineRequest = {
+        requestId,
+        operationType: "book_token",
+        payload: {
+          crop: payload.request.crop,
+          quantityQuintals: payload.request.quantityQuintals,
+          village: payload.request.village || DEMO_FARMER.village,
+          preferredTime: payload.request.preferredTime,
+          targetCentreId: payload.centreId,
+          targetCentreName: payload.centreName,
+          targetArrivalWindow: payload.arrivalWindow,
+          modalPrice: payload.modalPrice,
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        status: "PENDING_OFFLINE",
+        retryCount: 0,
+      };
+
+      await saveQueuedRequest(req);
+      setQueuedRequests((prev) => [
+        ...prev.filter((r) => r.requestId !== requestId),
+        req,
+      ]);
+      return req;
+    },
+    [],
+  );
+
+  const cancelOfflineRequest = useCallback(async (requestId: string) => {
+    await deleteQueuedRequest(requestId);
+    setQueuedRequests((prev) => prev.filter((r) => r.requestId !== requestId));
   }, []);
+
+  const retryOfflineRequest = useCallback(
+    async (requestId: string) => {
+      await updateQueuedRequest(requestId, {
+        status: "PENDING_OFFLINE",
+        retryCount: 0,
+        rejectionReason: undefined,
+        lastError: undefined,
+      });
+      setQueuedRequests((prev) =>
+        prev.map((r) =>
+          r.requestId === requestId
+            ? {
+                ...r,
+                status: "PENDING_OFFLINE",
+                retryCount: 0,
+                rejectionReason: undefined,
+                lastError: undefined,
+              }
+            : r,
+        ),
+      );
+      if (!isOffline) {
+        void triggerSync();
+      }
+    },
+    [isOffline, triggerSync],
+  );
+
+  // Automatic sync whenever offline state returns to online
+  useEffect(() => {
+    if (!isOffline && hydrated) {
+      void triggerSync();
+    } else if (isOffline) {
+      setSyncState("OFFLINE");
+    }
+  }, [isOffline, hydrated, triggerSync]);
 
   // ---- Offline demo toggle ------------------------------------------------
 
   const setOfflineDemo = useCallback((offline: boolean) => {
-    if (!offline) {
-      setUsingCachedData(false);
-      return;
+    setOfflineDemoState(offline);
+    setUsingCachedData(offline);
+    if (offline) {
+      setSyncState("OFFLINE");
     }
-    // Demo-only banner. We intentionally do NOT replace live centre state —
-    // the cache is a stale snapshot and overwriting live data caused data
-    // loss in earlier builds. Live data keeps flowing; the banner shows.
-    setUsingCachedData(true);
   }, []);
+
+  const currentSyncState: SyncState = isOffline ? "OFFLINE" : syncState;
 
   const value = useMemo(
     () => ({
@@ -482,6 +754,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       smsOutbox,
       isOffline,
       usingCachedData,
+      syncState: currentSyncState,
+      queuedRequests,
+      lastKnownSyncTime,
+      saveOfflineBooking,
+      cancelOfflineRequest,
+      retryOfflineRequest,
+      triggerSync,
       bookToken,
       cancelBooking,
       updateAppointmentStatus,
@@ -498,6 +777,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       smsOutbox,
       isOffline,
       usingCachedData,
+      currentSyncState,
+      queuedRequests,
+      lastKnownSyncTime,
+      saveOfflineBooking,
+      cancelOfflineRequest,
+      retryOfflineRequest,
+      triggerSync,
       bookToken,
       cancelBooking,
       updateAppointmentStatus,

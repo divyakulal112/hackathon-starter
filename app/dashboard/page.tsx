@@ -19,14 +19,17 @@ import {
   DEFAULT_LOCATION_ID,
   DEMO_CROPS,
   DEMO_FARMER_PROFILE,
+  LOCATIONS,
   MOCK_LOCATIONS,
   getFarmerLocation,
 } from "@/lib/mockData";
-import { DEMO_FARMER } from "@/lib/constants";
+import { DEMO_FARMER, RECOMMENDATION_CONFIG } from "@/lib/constants";
+import { resolveLocation } from "@/lib/geo";
 import type {
   Appointment,
   CentreEvaluation,
   Crop,
+  Location,
   PreferredTime,
   ProcurementRequest,
 } from "@/lib/types";
@@ -37,6 +40,11 @@ export default function FarmerDashboard() {
     centres,
     appointments,
     smsOutbox,
+    isOffline,
+    queuedRequests,
+    saveOfflineBooking,
+    cancelOfflineRequest,
+    retryOfflineRequest,
     bookToken,
     advanceAppointment,
     cancelBooking,
@@ -47,7 +55,7 @@ export default function FarmerDashboard() {
 
   const [request, setRequest] = useState<ProcurementRequest>({
     crop: "Paddy / Rice",
-    quantityQuintals: 4, // 4 quintals = 400 kg
+    quantityQuintals: 15,
     village: initialLocation.name,
     locationId: initialLocation.id,
     preferredTime: "afternoon",
@@ -55,16 +63,22 @@ export default function FarmerDashboard() {
   const [bookingTarget, setBookingTarget] = useState<CentreEvaluation | null>(null);
   const [smsOpen, setSmsOpen] = useState(false);
 
-  // ---- Location-Aware Coordination Engine output (recomputed reactively) ----
+  // ---- Resolve location from canonical geocoded dataset ----
+  const resolvedLocation: Location | null = useMemo(() => {
+    if (request.locationId) {
+      const loc = LOCATIONS.find((l) => l.id === request.locationId);
+      if (loc) return loc;
+    }
+    return resolveLocation(request.village, LOCATIONS);
+  }, [request.locationId, request.village]);
+
+  // ---- Coordination Engine output (recomputed on every data change) ----
   const recommendation = useMemo(
-    () => calculateCentreRecommendation(request, centres),
-    [request, centres],
+    () => calculateCentreRecommendation(request, centres, resolvedLocation),
+    [request, centres, resolvedLocation],
   );
 
-  const selectedLocation = useMemo(
-    () => getFarmerLocation(request.locationId),
-    [request.locationId],
-  );
+  const selectedLocation = resolvedLocation || initialLocation;
 
   // The demo farmer's most recent live (non-archived) appointment.
   const myAppointment: Appointment | undefined = useMemo(
@@ -78,6 +92,15 @@ export default function FarmerDashboard() {
     [appointments],
   );
 
+  // Active pending/syncing/attention queued requests
+  const activeQueuedRequest = useMemo(
+    () =>
+      queuedRequests
+        .filter((r) => r.status !== "CONFIRMED")
+        .sort((a, b) => b.createdAt - a.createdAt)[0],
+    [queuedRequests],
+  );
+
   const allStagesDone =
     myAppointment !== undefined && myAppointment.stageIndex >= 6;
 
@@ -89,24 +112,41 @@ export default function FarmerDashboard() {
     );
   }, [recommendation.explanationFragments, t]);
 
-  function confirmBooking() {
+  async function confirmBooking(modalPrice?: number | null) {
     if (!bookingTarget) return;
-    bookToken({
-      centreId: bookingTarget.centre.id,
-      request,
-      arrivalWindow: bookingTarget.arrivalWindowLabel,
-    });
+    if (isOffline) {
+      await saveOfflineBooking({
+        centreId: bookingTarget.centre.id,
+        centreName: bookingTarget.centre.name,
+        arrivalWindow: bookingTarget.arrivalWindowLabel,
+        request,
+        modalPrice,
+      });
+    } else {
+      bookToken({
+        centreId: bookingTarget.centre.id,
+        request,
+        arrivalWindow: bookingTarget.arrivalWindowLabel,
+        modalPrice,
+      });
+    }
     setBookingTarget(null);
+  }
+
+  async function handleSaveOffline() {
+    await saveOfflineBooking({
+      centreId: recommendation.best?.centre.id,
+      centreName: recommendation.best?.centre.name,
+      arrivalWindow:
+        recommendation.best?.arrivalWindowLabel || "10:00 AM – 10:20 AM",
+      request,
+    });
   }
 
   function startNewRequest() {
     if (!myAppointment) return;
     archiveAppointment(myAppointment.id);
   }
-
-  // Separate centres into in-service-area vs alternatives
-  const inAreaCentres = recommendation.evaluations.filter((e) => e.withinServiceArea);
-  const otherCentres = recommendation.evaluations.filter((e) => !e.withinServiceArea);
 
   return (
     <div className="min-h-svh pb-24 bg-gray-50/50">
@@ -131,18 +171,154 @@ export default function FarmerDashboard() {
           </div>
           <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs text-emerald-800 font-semibold flex items-center gap-1.5">
             <Compass className="h-4 w-4 text-emerald-600" />
-            <span>25 km {t("checklistWithinServiceArea")}</span>
+            <span>{RECOMMENDATION_CONFIG.serviceRadiusKm} km {t("checklistWithinServiceArea")}</span>
           </div>
         </section>
 
         {/* Procurement request form */}
         <RequestForm
           request={request}
+          resolvedLocation={resolvedLocation}
           onChange={setRequest}
-          disabled={Boolean(myAppointment)}
+          disabled={Boolean(myAppointment || activeQueuedRequest)}
+          isOffline={isOffline}
+          onSaveOffline={handleSaveOffline}
         />
 
-        {/* Recommended Centre Card (hidden while a token is active) */}
+        {/* Offline Queued Request View */}
+        {activeQueuedRequest && !myAppointment && (
+          <section
+            aria-label="Offline Request Status"
+            className="rounded-2xl border-2 border-amber-400 bg-white p-5 shadow-sm"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                      activeQueuedRequest.status === "PENDING_OFFLINE"
+                        ? "border border-amber-400 bg-amber-100 text-amber-900"
+                        : activeQueuedRequest.status === "SYNCING"
+                        ? "border border-sky-400 bg-sky-100 text-sky-900"
+                        : "border border-red-400 bg-red-100 text-red-900"
+                    }`}
+                  >
+                    {activeQueuedRequest.status === "PENDING_OFFLINE"
+                      ? t("pendingOffline")
+                      : activeQueuedRequest.status === "SYNCING"
+                      ? "SYNCING"
+                      : t("requiresAttention")}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {new Date(activeQueuedRequest.createdAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+
+                <p className="mt-2 text-2xl font-extrabold text-gray-900">
+                  {activeQueuedRequest.status === "REQUIRES_ATTENTION"
+                    ? t("requiresAttention")
+                    : "Token: Pending Confirmation"}
+                </p>
+                <p className="text-sm font-semibold text-gray-700">
+                  {activeQueuedRequest.payload.crop} · {activeQueuedRequest.payload.quantityQuintals} {t("quintals")}
+                </p>
+                <p className="text-sm text-gray-600">
+                  {activeQueuedRequest.payload.targetCentreName || "Nearest Centre"} ·{" "}
+                  {activeQueuedRequest.payload.targetArrivalWindow || "Arrival Window Pending"}
+                </p>
+              </div>
+
+              <div className="text-right">
+                <span className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px] text-gray-600">
+                  ID: {activeQueuedRequest.requestId.slice(0, 16)}...
+                </span>
+              </div>
+            </div>
+
+            {/* Offline sync explanation */}
+            {activeQueuedRequest.status === "PENDING_OFFLINE" && (
+              <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-950">
+                <p className="font-bold">📡 {t("savedOffline")}</p>
+                <p className="mt-0.5">{t("offlineSyncNotice")}</p>
+              </div>
+            )}
+
+            {/* Syncing state */}
+            {activeQueuedRequest.status === "SYNCING" && (
+              <div className="mt-4 rounded-xl border border-sky-300 bg-sky-50 p-3 text-xs leading-relaxed text-sky-950">
+                <p className="font-bold">🔄 {t("syncingStatus")}</p>
+                <p className="mt-0.5">Validating live centre capacity, queue size, and eligibility...</p>
+              </div>
+            )}
+
+            {/* Rejection / Attention Notice */}
+            {activeQueuedRequest.status === "REQUIRES_ATTENTION" && (
+              <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-3 text-xs leading-relaxed text-red-950">
+                <p className="font-bold">⚠️ Revalidation Warning</p>
+                <p className="mt-1">
+                  {activeQueuedRequest.rejectionReason ||
+                    "This procurement centre is currently at maximum daily intake quota or ineligible. Please select another centre."}
+                </p>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {activeQueuedRequest.status === "REQUIRES_ATTENTION" && (
+                <button
+                  type="button"
+                  onClick={() => retryOfflineRequest(activeQueuedRequest.requestId)}
+                  className="rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-amber-700"
+                >
+                  {t("retry")}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => cancelOfflineRequest(activeQueuedRequest.requestId)}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-xs font-bold text-gray-700 hover:bg-gray-100"
+              >
+                {t("cancelRequest")}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Location unsupported state */}
+        {!myAppointment && !activeQueuedRequest && !resolvedLocation && (
+          <section
+            role="alert"
+            className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm"
+          >
+            <p className="font-bold">⚠️ Location &ldquo;{request.village}&rdquo; is not recognized.</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-800">
+              Please select a valid location from the search list (e.g. Moodbidri, Belvai, Karkala, Mangaluru, Bengaluru, Kochi, Hyderabad, Delhi) to resolve coordinates and evaluate nearby centres.
+            </p>
+          </section>
+        )}
+
+        {/* No suitable centre within service radius */}
+        {!myAppointment && !activeQueuedRequest && resolvedLocation && !recommendation.best && (
+          <section
+            role="alert"
+            className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📍</span>
+              <p className="font-bold text-sm text-amber-950">
+                {recommendation.noSuitableCentreReason || `No suitable procurement centre found within the available service area (${RECOMMENDATION_CONFIG.serviceRadiusKm} km).`}
+              </p>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-amber-800">
+              Centres outside the {RECOMMENDATION_CONFIG.serviceRadiusKm} km service radius are listed below for informational purposes only.
+            </p>
+          </section>
+        )}
+
+        {/* Recommendation (hidden while a token is active to keep focus) */}
         {!myAppointment && recommendation.best && (
           <RecommendationCard
             best={recommendation.best}
@@ -151,36 +327,14 @@ export default function FarmerDashboard() {
           />
         )}
 
-        {/* If no centre in service radius accepts this crop */}
-        {!myAppointment && !recommendation.best && (
-          <section className="rounded-2xl border-2 border-amber-300 bg-amber-50/70 p-5 text-amber-900 shadow-xs">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="h-6 w-6 shrink-0 text-amber-600 mt-0.5" />
-              <div>
-                <h2 className="text-base font-bold text-amber-950">
-                  {t("noEligibleInRadius")}
-                </h2>
-                <p className="mt-1 text-sm text-amber-800">
-                  {t("locationRadiusNote")}
-                </p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Nearby Centres within Service Area */}
-        {!myAppointment && (
+        {/* Nearby centres within service radius */}
+        {!myAppointment && !activeQueuedRequest && recommendation.nearbyEvaluations.length > 0 && (
           <section aria-label={t("nearbyCentres")}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-gray-600">
-                {t("nearbyCentres")} ({inAreaCentres.length})
-              </h2>
-              <span className="text-xs text-gray-500 font-medium">
-                {t("locationRadiusNote")}
-              </span>
-            </div>
+            <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-gray-500">
+              {t("nearbyCentres")} ({RECOMMENDATION_CONFIG.serviceRadiusKm} km radius)
+            </h2>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {inAreaCentres.map((ev) => (
+              {recommendation.nearbyEvaluations.map((ev) => (
                 <CentreCard
                   key={ev.centre.id}
                   evaluation={ev}
@@ -192,14 +346,14 @@ export default function FarmerDashboard() {
           </section>
         )}
 
-        {/* Alternative Centres beyond service radius */}
-        {!myAppointment && otherCentres.length > 0 && (
-          <section aria-label={t("alternativeCentres")} className="pt-2">
-            <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-500">
-              {t("alternativeCentres")} (&gt;25 km)
+        {/* Alternative centres outside service area */}
+        {!myAppointment && !activeQueuedRequest && recommendation.distantAlternatives.length > 0 && (
+          <section aria-label="Alternative Centres Outside Service Area">
+            <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-gray-400">
+              Alternative Centres (Outside Service Area &gt; {RECOMMENDATION_CONFIG.serviceRadiusKm} km)
             </h2>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {otherCentres.map((ev) => (
+            <div className="grid gap-3 opacity-80 md:grid-cols-2 xl:grid-cols-3">
+              {recommendation.distantAlternatives.map((ev) => (
                 <CentreCard
                   key={ev.centre.id}
                   evaluation={ev}
@@ -213,34 +367,36 @@ export default function FarmerDashboard() {
 
         {/* Active booking + tracking stepper */}
         {myAppointment && (
-          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                  {t("yourToken")}
-                </p>
-                <p className="text-3xl font-black text-gray-900 tracking-tight">
-                  {myAppointment.tokenNumber}
-                </p>
-                <p className="mt-1 text-sm font-semibold text-gray-700">
-                  {myAppointment.crop} · {myAppointment.quantityQuintals} {t("quintals")}
-                </p>
-                <p className="text-xs text-gray-500 font-medium">
-                  {myAppointment.centreName} · {myAppointment.arrivalWindow}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs font-semibold text-gray-500">{t("estimatedAmount")}</p>
-                <p className="text-2xl font-extrabold text-emerald-700">
-                  ₹{myAppointment.estimatedAmountInr.toLocaleString("en-IN")}
-                </p>
-                {myAppointment.paymentRef && (
-                  <p className="text-xs font-mono font-bold text-gray-500 mt-0.5">
-                    {t("paymentRef")}: {myAppointment.paymentRef}
-                  </p>
-                )}
-              </div>
-            </div>
+          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+                      {t("yourToken")}
+                    </p>
+                    <p className="text-2xl font-extrabold text-gray-900">
+                      {myAppointment.tokenNumber}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {myAppointment.crop} · {myAppointment.quantityQuintals} {t("quintals")}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {myAppointment.centreName} · {myAppointment.arrivalWindow}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">{t("estimatedAmount")}</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {myAppointment.estimatedAmountInr != null
+                        ? `₹${myAppointment.estimatedAmountInr.toLocaleString("en-IN")}`
+                        : t("priceUnavailable")}
+                    </p>
+                    {myAppointment.paymentRef && (
+                      <p className="text-xs text-gray-500">
+                        {t("paymentRef")}: {myAppointment.paymentRef}
+                      </p>
+                    )}
+                  </div>
+                </div>
 
             <h2 className="mt-4 mb-3 text-sm font-bold uppercase tracking-wider text-gray-600">
               {t("procurementTracker")}
@@ -315,12 +471,18 @@ export default function FarmerDashboard() {
 
 function RequestForm({
   request,
+  resolvedLocation,
   onChange,
   disabled,
+  isOffline,
+  onSaveOffline,
 }: {
   request: ProcurementRequest;
+  resolvedLocation: Location | null;
   onChange: (r: ProcurementRequest) => void;
   disabled?: boolean;
+  isOffline?: boolean;
+  onSaveOffline?: () => void;
 }) {
   const { t } = useLanguage();
 
@@ -398,7 +560,7 @@ function RequestForm({
 
         {/* Preferred time selector */}
         <label className="block">
-          <span className="mb-1 block text-xs font-bold text-gray-700">
+          <span className="mb-1 block text-xs font-semibold text-gray-600">
             {t("preferredTime")}
           </span>
           <select
@@ -415,6 +577,36 @@ function RequestForm({
           </select>
         </label>
       </div>
+
+      {resolvedLocation ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+          <span>📍 {resolvedLocation.name}, {resolvedLocation.district}, {resolvedLocation.state}</span>
+          <span className="rounded-md bg-emerald-200/60 px-1.5 py-0.5 font-mono text-[11px] text-emerald-900">
+            {resolvedLocation.latitude.toFixed(4)}° N, {resolvedLocation.longitude.toFixed(4)}° E
+          </span>
+        </div>
+      ) : (
+        <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+          ⚠️ &ldquo;{request.village}&rdquo; not recognized. Select a supported town (e.g., Moodbidri, Belvai, Karkala, Mangaluru, Bengaluru, Kozhikode) to calculate real distance.
+        </div>
+      )}
+
+      {isOffline && !disabled && (
+        <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <p className="font-bold">📡 {t("offlineStatus")}</p>
+          <p className="mt-0.5">{t("offlineSyncNotice")}</p>
+          {onSaveOffline && (
+            <button
+              type="button"
+              onClick={onSaveOffline}
+              className="mt-2.5 min-h-10 w-full rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-amber-700"
+            >
+              💾 {t("saveOfflineBtn")}
+            </button>
+          )}
+        </div>
+      )}
+
       {disabled && (
         <p className="mt-2.5 text-xs font-bold text-emerald-700">
           {t("alreadyBooked")} — {t("viewTracking")}

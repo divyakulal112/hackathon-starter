@@ -240,8 +240,10 @@ export default function CentreDashboard() {
                 </span>
                 <span className="font-bold">{lookedUp.farmerName}</span>
                 <span className="text-xs text-gray-400">
-                  {lookedUp.crop} · {lookedUp.quantityQuintals} q ·{" "}
-                  ₹{lookedUp.estimatedAmountInr.toLocaleString("en-IN")}
+                  {lookedUp.crop} · {lookedUp.quantityQuintals} q
+                  {lookedUp.estimatedAmountInr != null
+                    ? ` · ₹${lookedUp.estimatedAmountInr.toLocaleString("en-IN")}`
+                    : ""}
                 </span>
                 <StatusBadge
                   variant={lookedUp.status === "cancelled" ? "bad" : lookedUpNext === null ? "good" : "busy"}

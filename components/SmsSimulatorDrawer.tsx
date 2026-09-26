@@ -25,6 +25,7 @@ export default function SmsSimulatorDrawer({
   messages: SmsMessage[];
 }) {
   const { t, language } = useLanguage();
+  const [filter, setFilter] = useState<"all" | "received" | "pending">("all");
 
   const templates = SMS_TEMPLATES[language];
 
@@ -33,16 +34,22 @@ export default function SmsSimulatorDrawer({
       return templates.booking(
         sms.tokenNumber,
         sms.centreName,
-        sms.arrivalWindow ?? ""
+        sms.arrivalWindow ?? "",
+        sms.crop,
+        sms.quantityQuintals,
       );
     }
 
     if (sms.kind === "payment") {
+      const amountFormatted =
+        sms.amountInr != null
+          ? `₹${sms.amountInr.toLocaleString("en-IN")}`
+          : "—";
       return templates.payment(
         sms.tokenNumber,
         sms.centreName,
-        `₹${(sms.amountInr ?? 0).toLocaleString("en-IN")}`,
-        sms.paymentRef ?? "—"
+        amountFormatted,
+        sms.paymentRef ?? "—",
       );
     }
 
@@ -53,7 +60,8 @@ export default function SmsSimulatorDrawer({
     return templates.status(
       sms.tokenNumber,
       sms.centreName,
-      stageLabel
+      stageLabel,
+      sms.crop,
     );
   }
 
@@ -61,6 +69,19 @@ export default function SmsSimulatorDrawer({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
+
+  const receivedCount = messages.filter(
+    (m) => (m.deliveryStatus ?? "received") === "received",
+  ).length;
+  const pendingCount = messages.filter(
+    (m) => m.deliveryStatus === "pending",
+  ).length;
+
+  const filteredMessages = messages.filter((m) => {
+    if (filter === "all") return true;
+    const status = m.deliveryStatus ?? "received";
+    return status === filter;
+  });
 
   return createPortal(
     <>
@@ -99,58 +120,144 @@ export default function SmsSimulatorDrawer({
         </header>
 
         {/* Phone mockup */}
-        <div className="mx-auto mt-4 w-70 overflow-hidden rounded-3xl border-4 border-gray-800 bg-[#c9d6c3] shadow-xl">
+        <div className="mx-auto mt-4 w-72 overflow-hidden rounded-3xl border-4 border-gray-800 bg-[#c9d6c3] shadow-xl">
           
           {/* Phone top bar */}
-          <div className="flex items-center justify-between bg-gray-900 px-3 py-1 text-[10px] text-gray-300">
-            <span className="font-bold">
+          <div className="flex items-center justify-between bg-gray-900 px-3 py-1.5 text-[10px] text-gray-300">
+            <span className="font-bold tracking-wider">
               INBOX
             </span>
-
-            <span>
-              {messages.length}
+            <span className="rounded bg-gray-800 px-1.5 py-0.5 font-mono text-[9px] text-emerald-400">
+              {messages.length} MSG
             </span>
           </div>
 
+          {/* Status category sub-bar */}
+          <div className="flex border-b border-gray-700 bg-gray-800 text-[9px] font-semibold text-gray-400">
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              className={`flex-1 py-1 text-center transition-colors ${
+                filter === "all"
+                  ? "bg-gray-700 font-bold text-emerald-300"
+                  : "hover:text-gray-200"
+              }`}
+            >
+              {t("smsAll")} ({messages.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("received")}
+              className={`flex-1 py-1 text-center transition-colors ${
+                filter === "received"
+                  ? "bg-gray-700 font-bold text-emerald-300"
+                  : "hover:text-gray-200"
+              }`}
+            >
+              {t("smsReceived")} ({receivedCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("pending")}
+              className={`flex-1 py-1 text-center transition-colors ${
+                filter === "pending"
+                  ? "bg-gray-700 font-bold text-emerald-300"
+                  : "hover:text-gray-200"
+              }`}
+            >
+              {t("smsPending")} ({pendingCount})
+            </button>
+          </div>
+
           {/* SMS list */}
-          <div className="max-h-[60vh] space-y-2 overflow-y-auto p-3">
+          <div className="max-h-[58vh] space-y-2.5 overflow-y-auto p-3">
             {messages.length === 0 ? (
-              <p className="py-6 text-center text-xs text-gray-700">
-                {t("smsEmpty")}
+              <div className="py-8 text-center">
+                <p className="text-xs leading-relaxed text-gray-700">
+                  {t("smsEmpty")}
+                </p>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="mt-3 inline-flex items-center rounded-lg bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-800 active:bg-emerald-900"
+                >
+                  {t("smsBookAction")}
+                </button>
+              </div>
+            ) : filteredMessages.length === 0 ? (
+              <p className="py-8 text-center text-xs text-gray-700">
+                {filter === "pending" ? t("smsNoPending") : t("smsEmpty")}
               </p>
             ) : (
-              [...messages]
+              [...filteredMessages]
                 .reverse()
-                .map((sms) => (
-                  <div
-                    key={sms.id}
-                    className="rounded-md border border-gray-500 bg-[#eef3ea] p-2 text-[11px] leading-snug text-gray-900 shadow-sm"
-                  >
-                    {/* SMS header */}
-                    <div className="mb-1 flex justify-between text-[9px] font-semibold text-gray-600">
-                      <span>
-                        KisanSync
-                      </span>
+                .map((sms) => {
+                  const isReceived =
+                    (sms.deliveryStatus ?? "received") === "received";
+                  const timeStr = new Date(sms.createdAt).toLocaleTimeString(
+                    [],
+                    { hour: "2-digit", minute: "2-digit" },
+                  );
 
-                      <span>
-                        {sms.kind === "booking"
-                          ? t("smsBooking")
-                          : sms.kind === "payment"
-                            ? t("smsPayment")
-                            : t("smsStatus")}
-                      </span>
+                  return (
+                    <div
+                      key={sms.id}
+                      className="rounded-lg border border-gray-400 bg-[#eef3ea] p-2.5 text-[11px] leading-snug text-gray-900 shadow-sm"
+                    >
+                      {/* SMS header */}
+                      <div className="mb-1.5 flex items-center justify-between text-[9px] font-semibold text-gray-600">
+                        <span className="flex items-center gap-1">
+                          <span className="font-extrabold text-gray-900">
+                            KisanSync
+                          </span>
+                          <span className="rounded bg-gray-200 px-1 py-0.5 text-[8px] font-medium text-gray-700">
+                            {sms.kind === "booking"
+                              ? t("smsBooking")
+                              : sms.kind === "payment"
+                                ? t("smsPayment")
+                                : t("smsStatus")}
+                          </span>
+                        </span>
+
+                        <span
+                          className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[8px] font-bold ${
+                            isReceived
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {isReceived
+                            ? `✓ ${t("smsReceived")}`
+                            : `⏳ ${t("smsPending")}`}
+                        </span>
+                      </div>
+
+                      {/* SMS content */}
+                      <p className="text-[11px] leading-relaxed text-gray-800">
+                        {renderBody(sms)}
+                      </p>
+
+                      {/* SMS metadata footer */}
+                      <div className="mt-2 flex items-center justify-between border-t border-gray-300/70 pt-1 text-[9px] text-gray-500">
+                        <span>{timeStr}</span>
+                        {sms.crop && (
+                          <span className="font-medium text-emerald-800">
+                            {sms.crop}
+                            {sms.quantityQuintals
+                              ? ` · ${sms.quantityQuintals} q`
+                              : ""}
+                          </span>
+                        )}
+                      </div>
                     </div>
-
-                    {/* SMS content */}
-                    {renderBody(sms)}
-                  </div>
-                ))
+                  );
+                })
             )}
           </div>
         </div>
 
         {/* Simulation message */}
-        <p className="mx-auto mt-3 w-70 text-center text-[10px] text-gray-500">
+        <p className="mx-auto mt-3 w-72 text-center text-[10px] text-gray-500">
           {t("smsSimulated")}
         </p>
       </aside>

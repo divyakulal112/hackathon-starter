@@ -6,11 +6,14 @@
 import type { AppointmentStatus } from "./types";
 
 // ---------------------------------------------------------------------------
-// Coordination Engine weights (transparent, rule-based)
-// Each factor contributes 0..weight points; total max = sum of weights.
+// Recommendation Configuration & Weights (Transparent, configurable)
 // ---------------------------------------------------------------------------
 
-export const ENGINE_WEIGHTS = {
+export const RECOMMENDATION_CONFIG = {
+  /** Maximum service radius in km for primary recommendations. Centres beyond this are treated as outside service area. */
+  serviceRadiusKm: 50,
+  /** Reference distance for normalisation (km). */
+  referenceDistanceMaxKm: 50,
   /** Up to 30 pts — nearer centres score higher. */
   distanceWeight: 30,
   /** Up to 25 pts — shorter queues score higher. */
@@ -19,7 +22,7 @@ export const ENGINE_WEIGHTS = {
   waitTimeWeight: 25,
   /** Up to 10 pts — more remaining daily capacity scores higher. */
   capacityWeight: 10,
-  /** 20 pts or 0 — crop eligibility is a hard requirement. */
+  /** 20 pts or 0 — crop eligibility is a hard requirement multiplier. */
   eligibilityWeight: 20,
 
   // Compatibility aliases
@@ -28,6 +31,19 @@ export const ENGINE_WEIGHTS = {
   wait: 25,
   capacity: 10,
   eligibility: 20,
+} as const;
+
+export const ENGINE_WEIGHTS = {
+  distance: RECOMMENDATION_CONFIG.distanceWeight,
+  queue: RECOMMENDATION_CONFIG.queueWeight,
+  wait: RECOMMENDATION_CONFIG.waitTimeWeight,
+  capacity: RECOMMENDATION_CONFIG.capacityWeight,
+  eligibility: RECOMMENDATION_CONFIG.eligibilityWeight,
+  distanceWeight: RECOMMENDATION_CONFIG.distanceWeight,
+  queueWeight: RECOMMENDATION_CONFIG.queueWeight,
+  waitTimeWeight: RECOMMENDATION_CONFIG.waitTimeWeight,
+  capacityWeight: RECOMMENDATION_CONFIG.capacityWeight,
+  eligibilityWeight: RECOMMENDATION_CONFIG.eligibilityWeight,
 } as const;
 
 /** Maximum possible total score, derived — do not hardcode elsewhere. */
@@ -69,27 +85,11 @@ export const LOAD_BUSY = 3;
 export const ARRIVAL_WINDOW_MINUTES = 20;
 
 // ---------------------------------------------------------------------------
-// Demo farmer + MSP reference rates (₹ per quintal, simulated values)
-// ---------------------------------------------------------------------------
-
 export const DEMO_FARMER = {
   id: "farmer-ramesh",
   name: "Ramesh Gowda",
   village: "Belvai, Moodbidri Taluk",
 } as const;
-
-export const CROP_RATES_INR_PER_QUINTAL: Record<string, number> = {
-  "Paddy / Rice": 2300,
-  Maize: 2050,
-  Coconut: 1800,
-  Arecanut: 3200,
-  Groundnut: 2650,
-  Chilli: 3500,
-  Tomato: 1200,
-  Potato: 1400,
-  "Black Gram": 2700,
-  "Green Gram": 2800,
-};
 
 // ---------------------------------------------------------------------------
 // 8-stage procurement tracker
@@ -123,12 +123,12 @@ export const CENTRE_STATUS_FLOW: AppointmentStatus[] = [
 
 export const STORAGE_KEYS = {
   /** Cached centre snapshot for offline demo. */
-  cachedCentres: "kisansync_cached_centres",
+  cachedCentres: "kisansync_cached_centres_v4",
   /** Selected language persists across reloads. */
   language: "kisansync_language",
   /** Live demo state (centres + appointments) shared across role tabs. */
-  /** v3: renamed to kisansync_shared_state per Phase 2 spec — old keys ignored. */
-  demoState: "kisansync_shared_state",
+  /** v4: refreshed to 50 verified national centres with geocoded coordinates. */
+  demoState: "kisansync_shared_state_v4",
   /** Active role ("farmer" | "centre") for the landing switcher. */
   role: "kisansync_role",
   /** SMS outbox when running on Supabase (SMS stays client-local in both modes). */

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sparkles, ChevronDown, Clock, Navigation, CheckCircle2, XCircle, MapPin, Gauge } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAppState } from "@/context/AppStateContext";
 import { ENGINE_WEIGHTS, MAX_TOTAL_SCORE } from "@/lib/constants";
 import { formatWaitMinutes } from "@/lib/waitTime";
 import type { CentreEvaluation } from "@/lib/types";
@@ -24,6 +25,7 @@ export default function RecommendationCard({
   onBook: () => void;
 }) {
   const { t } = useLanguage();
+  const { isOffline, lastKnownSyncTime } = useAppState();
   const [showBreakdown, setShowBreakdown] = useState(false);
   const c = best.centre;
 
@@ -42,21 +44,42 @@ export default function RecommendationCard({
           <Sparkles className="h-3.5 w-3.5 text-emerald-300" />
           {t("recommendedForYou")}
         </span>
-        <StatusBadge
-          variant={best.eligibility === "eligible" ? "good" : "bad"}
-          label={`${t("score")} ${best.score.totalScore}/${MAX_TOTAL_SCORE}`}
-        />
+        <div className="flex items-center gap-2">
+          {isOffline && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-300 px-2.5 py-0.5 text-xs font-bold text-amber-950">
+              📡 {t("lastKnownInfo")}
+            </span>
+          )}
+          <StatusBadge
+            variant={best.eligibility === "eligible" ? "good" : "bad"}
+            label={`${t("score")} ${best.score.totalScore}/${MAX_TOTAL_SCORE}`}
+          />
+        </div>
       </div>
 
       <div className="mt-3">
         <h2 className="text-2xl font-black leading-tight tracking-tight">{c.name}</h2>
-        <div className="mt-1 flex items-center gap-1.5 text-sm text-emerald-200">
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-emerald-200">
           <MapPin className="h-4 w-4 shrink-0 text-emerald-300" />
           <span>
-            {best.distanceKm} {t("kmAway")} · {c.location} ({c.district})
+            {best.distanceKm} {t("kmAway")} · {c.location}
+            {c.district && c.district !== c.location ? ` (${c.district})` : ""}
+            {c.state ? `, ${c.state}` : ""}
           </span>
         </div>
       </div>
+
+      {isOffline && (
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-300/40 bg-amber-400/20 px-2.5 py-1 text-xs font-medium text-amber-100">
+          <span>📡</span>
+          <span>
+            {t("lastKnownInfo")}
+            {lastKnownSyncTime
+              ? ` (${new Date(lastKnownSyncTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`
+              : ""}
+          </span>
+        </div>
+      )}
 
       {/* Metrics Row */}
       <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">

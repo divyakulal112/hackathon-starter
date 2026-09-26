@@ -20,12 +20,33 @@ create table if not exists public.farmers (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.locations (
+  id text primary key,
+  name text not null,
+  normalized_name text not null,
+  district text not null,
+  state text not null,
+  latitude numeric(8,4) not null,
+  longitude numeric(8,4) not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.centres (
   -- text id so demo seed ids (centre-moodbidri, ...) persist as-is.
   id text primary key,
   name text not null,
+  canonical_name text,
+  state text,
+  district text,
+  subdistrict text,
   location text not null,
-  distance_km numeric(5,1) not null,
+  latitude numeric(8,4) not null default 13.0,
+  longitude numeric(8,4) not null default 75.0,
+  distance_km numeric(5,1) not null default 0,
+  source text,
+  external_id text,
+  centre_type text default 'apmc_mandi',
+  address text,
   capacity_per_day int not null,
   processing_rate_per_hour numeric(4,1) not null,
   -- Live operational fields consumed by the client-side coordination engine
@@ -35,8 +56,13 @@ create table if not exists public.centres (
   eligible_crops text[] not null default '{}',
   opens_at time not null default '08:00',
   closes_at time not null default '19:00',
+  active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+create index if not exists idx_centres_coords on public.centres (latitude, longitude);
+create index if not exists idx_centres_state_district on public.centres (state, district);
+create index if not exists idx_centres_active on public.centres (active);
 
 create table if not exists public.procurement_requests (
   id uuid primary key default gen_random_uuid(),
@@ -98,6 +124,7 @@ alter table public.procurement_requests enable row level security;
 alter table public.appointments enable row level security;
 alter table public.procurement_status enable row level security;
 alter table public.payments enable row level security;
+alter table public.locations enable row level security;
 
 create policy "demo read all" on public.centres for select using (true);
 create policy "demo write all" on public.centres for all using (true) with check (true);
@@ -107,3 +134,4 @@ create policy "demo status all" on public.procurement_status for all using (true
 create policy "demo payments all" on public.payments for all using (true) with check (true);
 create policy "demo farmers all" on public.farmers for all using (true) with check (true);
 create policy "demo profiles read" on public.profiles for select using (true);
+create policy "demo locations read" on public.locations for select using (true);

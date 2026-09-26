@@ -16,7 +16,7 @@
  *     source stores it under its own localStorage key.
  */
 
-import type { Appointment, Centre, ProcurementRequest, SmsMessage } from "@/lib/types";
+import type { Appointment, Centre, Location, ProcurementRequest, SmsMessage } from "@/lib/types";
 
 export type DataSourceKind = "local" | "supabase";
 
@@ -55,6 +55,17 @@ export interface DataSource {
    * Returns an unsubscribe function.
    */
   subscribe(onChange: (snapshot: AppStateSnapshot) => void): () => void;
+
+  /** Search locations by name/prefix from database or canonical store */
+  searchLocations(query: string, limit?: number): Promise<Location[]>;
+
+  /** Get location record by id */
+  getLocationById(id: string): Promise<Location | null>;
+
+  /**
+   * Get nearby active procurement centres within radius (km) using spatial/bounding-box filter.
+   */
+  getNearbyCentres(latitude: number, longitude: number, radiusKm?: number): Promise<Centre[]>;
 
   /**
    * Persist a new booking (farmer + request + appointment + centre counters).
