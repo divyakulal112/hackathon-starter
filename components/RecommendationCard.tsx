@@ -70,11 +70,11 @@ export default function RecommendationCard({
       </div>
 
       {isOffline && (
-        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-300/40 bg-amber-400/20 px-2.5 py-1 text-xs font-medium text-amber-100">
+        <div suppressHydrationWarning className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-300/40 bg-amber-400/20 px-2.5 py-1 text-xs font-medium text-amber-100">
           <span>📡</span>
-          <span>
+          <span suppressHydrationWarning>
             {t("lastKnownInfo")}
-            {lastKnownSyncTime
+            {lastKnownSyncTime > 0
               ? ` (${new Date(lastKnownSyncTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`
               : ""}
           </span>
@@ -98,7 +98,7 @@ export default function RecommendationCard({
             <Navigation className="h-3.5 w-3.5" />
             <span className="text-xs font-medium">{t("arrivalWindow")}</span>
           </div>
-          <p className="mt-1 text-base font-extrabold">{best.arrivalWindowLabel}</p>
+          <p className="mt-1 text-base font-extrabold" suppressHydrationWarning>{best.arrivalWindowLabel}</p>
         </div>
 
         <div className="rounded-xl bg-white/10 p-3 backdrop-blur-xs">

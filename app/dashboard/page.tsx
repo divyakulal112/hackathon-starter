@@ -209,7 +209,7 @@ export default function FarmerDashboard() {
                       ? "SYNCING"
                       : t("requiresAttention")}
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span suppressHydrationWarning className="text-xs text-gray-500">
                     {new Date(activeQueuedRequest.createdAt).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
@@ -380,7 +380,7 @@ export default function FarmerDashboard() {
                       {myAppointment.crop} · {myAppointment.quantityQuintals} {t("quintals")}
                     </p>
                     <p className="text-sm text-gray-600">
-                      {myAppointment.centreName} · {myAppointment.arrivalWindow}
+                      {myAppointment.centreName} · <span suppressHydrationWarning>{myAppointment.arrivalWindow}</span>
                     </p>
                   </div>
                   <div className="text-right">

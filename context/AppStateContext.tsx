@@ -171,7 +171,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [usingCachedData, setUsingCachedData] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>("ONLINE");
   const [queuedRequests, setQueuedRequests] = useState<QueuedOfflineRequest[]>([]);
-  const [lastKnownSyncTime, setSyncTimeState] = useState<number>(Date.now());
+  const [lastKnownSyncTime, setSyncTimeState] = useState<number>(0);
   const [hydrated, setHydrated] = useState(false);
 
   const isOffline = browserOffline || offlineDemo;

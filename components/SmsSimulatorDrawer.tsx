@@ -239,7 +239,7 @@ export default function SmsSimulatorDrawer({
 
                       {/* SMS metadata footer */}
                       <div className="mt-2 flex items-center justify-between border-t border-gray-300/70 pt-1 text-[9px] text-gray-500">
-                        <span>{timeStr}</span>
+                        <span suppressHydrationWarning>{timeStr}</span>
                         {sms.crop && (
                           <span className="font-medium text-emerald-800">
                             {sms.crop}

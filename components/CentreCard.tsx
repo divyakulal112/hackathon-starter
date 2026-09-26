@@ -89,9 +89,9 @@ export default function CentreCard({
       </dl>
 
       {recommended && (
-        <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+        <p suppressHydrationWarning className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           <span className="font-semibold">{t("arrivalWindow")}:</span>{" "}
-          {evaluation.arrivalWindowLabel}
+          <span suppressHydrationWarning>{evaluation.arrivalWindowLabel}</span>
         </p>
       )}
 

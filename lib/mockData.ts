@@ -292,7 +292,7 @@ function seedAppointment(
     quantityQuintals,
     village: "Moodbidri Taluk",
     arrivalWindow: "10:00 AM – 10:20 AM",
-    bookedAt: new Date().toISOString(),
+    bookedAt: "2026-09-27T08:00:00.000Z",
     status,
     stageIndex,
     estimatedAmountInr: null,
