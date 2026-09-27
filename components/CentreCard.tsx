@@ -32,23 +32,25 @@ export default function CentreCard({
 
   return (
     <div
-      className={`rounded-xl border-2 bg-white p-4 shadow-sm transition-colors ${
-        recommended ? "border-emerald-600 ring-2 ring-emerald-600/30" : "border-gray-200"
+      className={`rounded-xl bg-white p-4 shadow-2xs transition-all ${
+        recommended
+          ? "border-2 border-emerald-600 ring-2 ring-emerald-600/10"
+          : "border border-stone-200/90 hover:border-stone-300"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-emerald-700" aria-hidden />
-            <h3 className="text-base font-bold text-gray-900">{c.name}</h3>
+          <div className="flex items-center gap-1.5">
+            <MapPin className="h-4 w-4 text-emerald-600 shrink-0" aria-hidden />
+            <h3 className="text-base font-bold text-stone-900">{c.name}</h3>
           </div>
-          <p className="mt-0.5 text-sm text-gray-500">
+          <p className="mt-0.5 text-xs text-stone-500">
             {evaluation.distanceKm} {t("kmAway")} · {c.location}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
           {isOffline && (
-            <span className="inline-flex rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+            <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
               📡 {t("lastKnownInfo")}
             </span>
           )}
@@ -58,14 +60,14 @@ export default function CentreCard({
             label={evaluation.eligibility === "eligible" ? t("eligible") : t("notEligible")}
           />
           {!evaluation.isWithinServiceRadius && (
-            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+            <span className="inline-flex rounded-full border border-stone-200 bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-600">
               Outside radius
             </span>
           )}
         </div>
       </div>
 
-      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+      <dl className="mt-3.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
         <Metric
           icon={<Users className="h-4 w-4" />}
           label={t("queue")}
@@ -89,7 +91,7 @@ export default function CentreCard({
       </dl>
 
       {recommended && (
-        <p suppressHydrationWarning className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+        <p suppressHydrationWarning className="mt-3 rounded-lg border border-emerald-200/80 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-900">
           <span className="font-semibold">{t("arrivalWindow")}:</span>{" "}
           <span suppressHydrationWarning>{evaluation.arrivalWindowLabel}</span>
         </p>
@@ -105,7 +107,7 @@ export default function CentreCard({
               ? undefined
               : `${t("notEligible")}: ${c.name}`
           }
-          className="mt-3 min-h-11 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 active:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+          className="mt-3.5 min-h-10 w-full rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-emerald-700 active:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400 disabled:border disabled:border-stone-200 transition-colors"
         >
           {t("bookToken")}
         </button>
@@ -125,13 +127,11 @@ function Metric({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-gray-400">{icon}</span>
+      <span className="text-stone-400 shrink-0">{icon}</span>
       <div className="min-w-0">
-        <dt className="text-xs text-gray-500">{label}</dt>
-        <dd className="truncate font-semibold text-gray-900">{value}</dd>
+        <dt className="text-xs text-stone-500">{label}</dt>
+        <dd className="truncate font-semibold text-stone-900 text-sm">{value}</dd>
       </div>
     </div>
   );
 }
-
-

@@ -21,7 +21,7 @@ export default function TrackingStepper({
 
   if (cancelled) {
     return (
-      <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+      <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
         {t("cancelled")}
       </div>
     );
@@ -41,7 +41,7 @@ export default function TrackingStepper({
               <span
                 aria-hidden
                 className={`absolute left-[11px] top-6 h-[calc(100%-24px)] w-0.5 ${
-                  done ? "bg-emerald-600" : "bg-gray-200"
+                  done ? "bg-emerald-600" : "bg-stone-200"
                 }`}
               />
             )}
@@ -50,8 +50,8 @@ export default function TrackingStepper({
                 done
                   ? "border-emerald-600 bg-emerald-600 text-white"
                   : active
-                    ? "border-emerald-600 bg-white text-emerald-700 ring-4 ring-emerald-600/20"
-                    : "border-gray-300 bg-white text-gray-400"
+                    ? "border-emerald-600 bg-white text-emerald-700 ring-4 ring-emerald-500/15"
+                    : "border-stone-200 bg-white text-stone-400"
               }`}
             >
               {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
@@ -59,15 +59,15 @@ export default function TrackingStepper({
             <span
               className={`text-sm leading-6 ${
                 active
-                  ? "font-bold text-emerald-800"
+                  ? "font-semibold text-stone-900"
                   : done
-                    ? "font-medium text-gray-700"
-                    : "text-gray-400"
+                    ? "font-medium text-stone-700"
+                    : "text-stone-400"
               }`}
             >
               {t(labelKey)}
               {active && (
-                <span className="ml-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                <span className="ml-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                   ●
                 </span>
               )}

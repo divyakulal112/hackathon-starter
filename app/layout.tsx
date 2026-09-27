@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { LanguageProvider } from "@/context/LanguageContext";
 import { AppStateProvider } from "@/context/AppStateContext";
+import { FarmerAuthProvider } from "@/context/FarmerAuthContext";
+import { CentreAuthProvider } from "@/context/CentreAuthContext";
 
 export const metadata: Metadata = {
   title: "KisanSync — Smart Procurement Coordination",
@@ -21,7 +23,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <LanguageProvider>
-          <AppStateProvider>{children}</AppStateProvider>
+          <FarmerAuthProvider>
+            <CentreAuthProvider>
+              <AppStateProvider>{children}</AppStateProvider>
+            </CentreAuthProvider>
+          </FarmerAuthProvider>
         </LanguageProvider>
       </body>
     </html>

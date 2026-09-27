@@ -82,8 +82,56 @@ function writeLocalState(state: StoredState): void {
   }
 }
 
+export const BROADCAST_CHANNEL_NAME = "kisansync_shared_channel";
+
 export class LocalStorageSource implements DataSource {
   readonly kind: DataSourceKind = "local";
+  private channel: BroadcastChannel | null = null;
+  private listeners = new Set<(snapshot: AppStateSnapshot) => void>();
+
+  constructor() {
+    if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+      try {
+        this.channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+        this.channel.onmessage = (event) => {
+          if (
+            event.data &&
+            Array.isArray(event.data.centres) &&
+            Array.isArray(event.data.appointments)
+          ) {
+            const snapshot: AppStateSnapshot = {
+              centres: event.data.centres,
+              appointments: event.data.appointments,
+              smsOutbox: Array.isArray(event.data.smsOutbox) ? event.data.smsOutbox : [],
+            };
+            this.listeners.forEach((fn) => {
+              try {
+                fn(snapshot);
+              } catch (err) {
+                console.error("[KisanSync] Broadcast listener error:", err);
+              }
+            });
+          }
+        };
+      } catch {
+        // Fallback to storage event if BroadcastChannel creation fails
+      }
+    }
+  }
+
+  private broadcast(snapshot: AppStateSnapshot): void {
+    if (this.channel) {
+      try {
+        this.channel.postMessage({
+          centres: snapshot.centres,
+          appointments: snapshot.appointments,
+          smsOutbox: snapshot.smsOutbox,
+        });
+      } catch {
+        // BroadcastChannel failed, fallback to storage event
+      }
+    }
+  }
 
   async load(): Promise<AppStateSnapshot | null> {
     const local = readLocalState();
@@ -101,9 +149,12 @@ export class LocalStorageSource implements DataSource {
       appointments: snapshot.appointments,
       sms: snapshot.smsOutbox,
     });
+    this.broadcast(snapshot);
   }
 
   subscribe(onChange: (snapshot: AppStateSnapshot) => void): () => void {
+    this.listeners.add(onChange);
+
     function onStorage(e: StorageEvent) {
       if (e.key !== STORAGE_KEYS.demoState || !e.newValue) return;
       try {
@@ -120,8 +171,16 @@ export class LocalStorageSource implements DataSource {
         // ignore malformed payloads
       }
     }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      window.addEventListener("storage", onStorage);
+    }
+
+    return () => {
+      this.listeners.delete(onChange);
+      if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+        window.removeEventListener("storage", onStorage);
+      }
+    };
   }
 
   async searchLocations(query: string, limit: number = 10): Promise<Location[]> {
@@ -155,18 +214,99 @@ export class LocalStorageSource implements DataSource {
     });
   }
 
-  // The provider already applies optimistic in-memory state before calling
-  // persist(), so every mutation funnels through persist(). Parameters are
-  // intentionally unused — they exist to satisfy the DataSource contract.
-  async bookToken(_payload: import("./types").BookTokenPayload): Promise<null> {
+  async bookToken(payload: import("./types").BookTokenPayload): Promise<null> {
+    const local = readLocalState() ?? {
+      centres: MOCK_CENTRES,
+      appointments: [],
+      sms: [],
+    };
+    const updatedAppointments = [
+      ...local.appointments.filter((a) => a.id !== payload.appointment.id),
+      payload.appointment,
+    ];
+    const updatedCentres = local.centres.map((c) =>
+      c.id === payload.centreId ? payload.centreAfter : c,
+    );
+    const updatedState: StoredState = {
+      centres: updatedCentres,
+      appointments: updatedAppointments,
+      sms: local.sms,
+    };
+    writeLocalState(updatedState);
+    this.broadcast({
+      centres: updatedState.centres,
+      appointments: updatedState.appointments,
+      smsOutbox: updatedState.sms,
+    });
     return null;
   }
 
-  async updateAppointmentStatus(_appointment: Appointment): Promise<void> {}
+  async updateAppointmentStatus(appointment: Appointment): Promise<void> {
+    const local = readLocalState() ?? {
+      centres: MOCK_CENTRES,
+      appointments: [],
+      sms: [],
+    };
+    const exists = local.appointments.some((a) => a.id === appointment.id);
+    const updatedAppointments = exists
+      ? local.appointments.map((a) => (a.id === appointment.id ? appointment : a))
+      : [...local.appointments, appointment];
 
-  async surgeQueue(_centreId: string, _newQueueCount: number): Promise<void> {}
+    const updatedState: StoredState = {
+      ...local,
+      appointments: updatedAppointments,
+    };
+    writeLocalState(updatedState);
+    this.broadcast({
+      centres: updatedState.centres,
+      appointments: updatedState.appointments,
+      smsOutbox: updatedState.sms,
+    });
+  }
 
-  async archiveAppointment(_appointment: Appointment): Promise<void> {}
+  async surgeQueue(centreId: string, newQueueCount: number): Promise<void> {
+    const local = readLocalState() ?? {
+      centres: MOCK_CENTRES,
+      appointments: [],
+      sms: [],
+    };
+    const updatedCentres = local.centres.map((c) =>
+      c.id === centreId ? { ...c, queueCount: newQueueCount } : c,
+    );
+    const updatedState: StoredState = {
+      ...local,
+      centres: updatedCentres,
+    };
+    writeLocalState(updatedState);
+    this.broadcast({
+      centres: updatedState.centres,
+      appointments: updatedState.appointments,
+      smsOutbox: updatedState.sms,
+    });
+  }
 
-  async resetDemoData(_snapshot: AppStateSnapshot): Promise<void> {}
+  async archiveAppointment(appointment: Appointment): Promise<void> {
+    const local = readLocalState() ?? {
+      centres: MOCK_CENTRES,
+      appointments: [],
+      sms: [],
+    };
+    const updatedAppointments = local.appointments.map((a) =>
+      a.id === appointment.id ? { ...a, archived: true } : a,
+    );
+    const updatedState: StoredState = {
+      ...local,
+      appointments: updatedAppointments,
+    };
+    writeLocalState(updatedState);
+    this.broadcast({
+      centres: updatedState.centres,
+      appointments: updatedState.appointments,
+      smsOutbox: updatedState.sms,
+    });
+  }
+
+  async resetDemoData(snapshot: AppStateSnapshot): Promise<void> {
+    this.persist(snapshot);
+  }
 }

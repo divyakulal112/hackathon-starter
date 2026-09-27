@@ -102,6 +102,81 @@ export interface Farmer {
   village: string;
 }
 
+export interface FarmerProfile {
+  id: string;
+  phone: string;
+  name: string;
+  village: string;
+  location: string;
+  preferredLanguage: "en" | "kn" | "hi";
+}
+
+export interface FarmerSession {
+  phone: string;
+  profile: FarmerProfile | null;
+  authenticatedAt: number;
+}
+
+
+export interface DemoFarmerProfile {
+  name: string;
+  village: string;
+}
+
+export interface DemoCentreProfile {
+  centreId: string;
+  name: string;
+  address: string;
+  village: string;
+  district: string;
+  state: string;
+  agency: string;
+  supportedCrops: string[];
+  dailyCapacity: number;
+  dailyCapacityKg: number;
+  processingRatePerHour: number;
+  operatingHours: {
+    opening: string;
+    closing: string;
+  };
+  isSetupComplete: boolean;
+}
+
+
+export interface CentreProfile {
+  id: string;
+  centreId: string;
+  name: string;
+  address: string;
+  village: string;
+  district: string;
+  state: string;
+  agency: string;
+  supportedCrops: string[];
+  operatingHours: {
+    opening: string;
+    closing: string;
+  };
+}
+
+export interface CentreOperations {
+  centreId: string;
+  dailyCapacity: number;
+  availableCapacity: number;
+  processingRatePerHour: number;
+  queueCount: number;
+  availableSlots: number;
+}
+
+export interface CentreSession {
+  centreId: string;
+  phone: string;
+  profile: CentreProfile | null;
+  operations: CentreOperations | null;
+  authenticatedAt: number;
+}
+
+
 export interface ProcurementRequest {
   crop: Crop;
   quantityQuintals: number;

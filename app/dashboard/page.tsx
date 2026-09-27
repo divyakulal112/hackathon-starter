@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { MessageSquareText, Sprout, MapPin, AlertCircle, Compass } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { MessageSquareText, Sprout, MapPin, AlertCircle, Compass, Edit3 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import RecommendationCard from "@/components/RecommendationCard";
 import CentreCard from "@/components/CentreCard";
 import BookingModal from "@/components/BookingModal";
 import TrackingStepper from "@/components/TrackingStepper";
+import StatusBadge from "@/components/StatusBadge";
 import SmsSimulatorDrawer from "@/components/SmsSimulatorDrawer";
 import NetworkLoadSimulator from "@/components/NetworkLoadSimulator";
+import FarmerProfileModal from "@/components/FarmerProfileModal";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAppState } from "@/context/AppStateContext";
 import {
@@ -23,7 +25,12 @@ import {
   MOCK_LOCATIONS,
   getFarmerLocation,
 } from "@/lib/mockData";
-import { DEMO_FARMER, RECOMMENDATION_CONFIG } from "@/lib/constants";
+import {
+  DEMO_FARMER,
+  RECOMMENDATION_CONFIG,
+  stageKeyFor,
+  statusDescriptionKeyFor,
+} from "@/lib/constants";
 import { resolveLocation } from "@/lib/geo";
 import type {
   Appointment,
@@ -53,6 +60,10 @@ export default function FarmerDashboard() {
 
   const initialLocation = getFarmerLocation(DEFAULT_LOCATION_ID);
 
+  const [profile, setProfile] = useState<{ name: string; village: string } | null>(null);
+  const [isProfileReady, setIsProfileReady] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+
   const [request, setRequest] = useState<ProcurementRequest>({
     crop: "Paddy / Rice",
     quantityQuintals: 15,
@@ -62,6 +73,64 @@ export default function FarmerDashboard() {
   });
   const [bookingTarget, setBookingTarget] = useState<CentreEvaluation | null>(null);
   const [smsOpen, setSmsOpen] = useState(false);
+
+  // Load saved farmer profile on mount
+  useEffect(() => {
+    try {
+      const saved =
+        localStorage.getItem("freebuff_farmer_profile") ||
+        localStorage.getItem("farmerProfile");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (
+          parsed &&
+          typeof parsed.name === "string" &&
+          typeof parsed.village === "string" &&
+          parsed.name.trim()
+        ) {
+          const loaded = { name: parsed.name.trim(), village: parsed.village.trim() };
+          setProfile(loaded);
+          setRequest((prev) => {
+            const loc = LOCATIONS.find(
+              (l) => l.name.toLowerCase() === loaded.village.toLowerCase(),
+            );
+            return {
+              ...prev,
+              village: loaded.village,
+              locationId: loc ? loc.id : prev.locationId,
+            };
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load farmer profile from localStorage", e);
+    } finally {
+      setIsProfileReady(true);
+    }
+  }, []);
+
+  function handleSaveProfile(name: string, village: string) {
+    const trimmedName = name.trim() || DEMO_FARMER.name;
+    const trimmedVillage = village.trim() || initialLocation.name;
+    const newProfile = { name: trimmedName, village: trimmedVillage };
+    try {
+      localStorage.setItem("freebuff_farmer_profile", JSON.stringify(newProfile));
+      localStorage.setItem("farmerProfile", JSON.stringify(newProfile));
+    } catch (e) {
+      console.error("Failed to save farmer profile to localStorage", e);
+    }
+    setProfile(newProfile);
+    setIsEditingProfile(false);
+
+    const matchedLoc = LOCATIONS.find(
+      (l) => l.name.toLowerCase() === trimmedVillage.toLowerCase(),
+    );
+    setRequest((prev) => ({
+      ...prev,
+      village: trimmedVillage,
+      locationId: matchedLoc ? matchedLoc.id : prev.locationId,
+    }));
+  }
 
   // ---- Resolve location from canonical geocoded dataset ----
   const resolvedLocation: Location | null = useMemo(() => {
@@ -128,6 +197,8 @@ export default function FarmerDashboard() {
         request,
         arrivalWindow: bookingTarget.arrivalWindowLabel,
         modalPrice,
+        farmerName: profile?.name,
+        farmerVillage: profile?.village,
       });
     }
     setBookingTarget(null);
@@ -149,29 +220,39 @@ export default function FarmerDashboard() {
   }
 
   return (
-    <div className="min-h-svh pb-24 bg-gray-50/50">
+    <div className="min-h-svh pb-24 bg-stone-50/50">
       <AppHeader />
 
-      <main className="mx-auto max-w-5xl space-y-5 px-4 py-4">
+      <main className="mx-auto max-w-5xl space-y-4 px-4 py-4">
         {/* Farmer identity & location banner */}
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-xs">
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200/90 bg-white p-4 shadow-2xs">
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 font-bold shadow-xs">
-              <Sprout className="h-6 w-6" />
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 font-bold shadow-2xs">
+              <Sprout className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h1 className="truncate text-lg font-bold text-gray-900">
-                {DEMO_FARMER_PROFILE.name}
+              <h1 className="truncate text-base font-bold text-stone-900">
+                {profile?.name || DEMO_FARMER_PROFILE.name}
               </h1>
-              <p className="flex items-center gap-1 truncate text-xs font-semibold text-emerald-800">
-                <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              <p className="flex items-center gap-1 truncate text-xs font-medium text-stone-500">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-stone-400" />
                 {selectedLocation.name}, {selectedLocation.district}
               </p>
             </div>
           </div>
-          <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs text-emerald-800 font-semibold flex items-center gap-1.5">
-            <Compass className="h-4 w-4 text-emerald-600" />
-            <span>{RECOMMENDATION_CONFIG.serviceRadiusKm} km {t("checklistWithinServiceArea")}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsEditingProfile(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 hover:text-stone-900 transition-colors shadow-2xs"
+            >
+              <Edit3 className="h-3.5 w-3.5 text-stone-400" />
+              {t("editDetails")}
+            </button>
+            <div className="rounded-lg bg-stone-50 border border-stone-200 px-3 py-1.5 text-xs text-stone-600 font-medium flex items-center gap-1.5">
+              <Compass className="h-4 w-4 text-stone-400" />
+              <span>{RECOMMENDATION_CONFIG.serviceRadiusKm} km {t("checklistWithinServiceArea")}</span>
+            </div>
           </div>
         </section>
 
@@ -367,69 +448,105 @@ export default function FarmerDashboard() {
 
         {/* Active booking + tracking stepper */}
         {myAppointment && (
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                      {t("yourToken")}
-                    </p>
-                    <p className="text-2xl font-extrabold text-gray-900">
-                      {myAppointment.tokenNumber}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      {myAppointment.crop} · {myAppointment.quantityQuintals} {t("quintals")}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      {myAppointment.centreName} · <span suppressHydrationWarning>{myAppointment.arrivalWindow}</span>
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">{t("estimatedAmount")}</p>
-                    <p className="text-lg font-bold text-gray-900">
-                      {myAppointment.estimatedAmountInr != null
-                        ? `₹${myAppointment.estimatedAmountInr.toLocaleString("en-IN")}`
-                        : t("priceUnavailable")}
-                    </p>
-                    {myAppointment.paymentRef && (
-                      <p className="text-xs text-gray-500">
-                        {t("paymentRef")}: {myAppointment.paymentRef}
-                      </p>
-                    )}
-                  </div>
-                </div>
+          <section className="rounded-xl border border-stone-200/90 bg-white p-5 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-stone-100">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                  {t("yourToken")}
+                </p>
+                <p className="text-2xl font-bold tracking-tight text-stone-900">
+                  {myAppointment.tokenNumber}
+                </p>
+                <p className="text-sm font-medium text-stone-700 mt-0.5">
+                  {myAppointment.crop} · {myAppointment.quantityQuintals} {t("quintals")}
+                </p>
+                <p className="text-xs text-stone-500">
+                  {myAppointment.centreName} · <span suppressHydrationWarning>{myAppointment.arrivalWindow}</span>
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-stone-500">{t("estimatedAmount")}</p>
+                <p className="text-lg font-bold text-stone-900">
+                  {myAppointment.estimatedAmountInr != null
+                    ? `₹${myAppointment.estimatedAmountInr.toLocaleString("en-IN")}`
+                    : t("priceUnavailable")}
+                </p>
+                {myAppointment.paymentRef && (
+                  <p className="text-xs text-stone-500">
+                    {t("paymentRef")}: {myAppointment.paymentRef}
+                  </p>
+                )}
+              </div>
+            </div>
 
-            <h2 className="mt-4 mb-3 text-sm font-bold uppercase tracking-wider text-gray-600">
-              {t("procurementTracker")}
-            </h2>
+            <div className="mt-4 mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+                {t("procurementTracker")}
+              </h2>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-200">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {t("liveCentreUpdates")}
+              </span>
+            </div>
+
             <TrackingStepper
               stageIndex={myAppointment.stageIndex}
               cancelled={myAppointment.status === "cancelled"}
             />
 
-            <button
-              type="button"
-              onClick={() => advanceAppointment(myAppointment.id)}
-              disabled={allStagesDone}
-              className="mt-4 min-h-12 w-full rounded-xl bg-emerald-600 px-4 font-extrabold text-white shadow-xs hover:bg-emerald-700 active:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300 transition-colors"
-            >
-              {t("nextStage")}
-            </button>
-            <p className="mt-2 text-center text-xs text-gray-500">
-              {t("congestionNote")}
-            </p>
+            {/* Current Stage Live Centre Operational Status */}
+            <div className="mt-4 rounded-lg border border-stone-200/90 bg-stone-50/70 p-3.5 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <StatusBadge
+                  variant={myAppointment.status === "cancelled" ? "bad" : allStagesDone ? "good" : "busy"}
+                  label={t(stageKeyFor(myAppointment.status))}
+                />
+                <span className="font-medium text-stone-600 truncate">
+                  {myAppointment.centreName}
+                </span>
+              </div>
+              <p className="mt-2 text-stone-700 leading-relaxed font-normal">
+                {t(statusDescriptionKeyFor(myAppointment.status))}
+              </p>
+            </div>
+
             {allStagesDone && (
               <button
                 type="button"
                 onClick={startNewRequest}
-                className="mt-3 min-h-12 w-full rounded-xl border-2 border-emerald-600 bg-emerald-50 px-4 text-sm font-extrabold text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200 transition-colors"
+                className="mt-3 min-h-11 w-full rounded-lg border border-emerald-600 bg-emerald-50 px-4 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200 transition-colors"
               >
                 {t("startNewRequest")}
               </button>
             )}
+
             {!allStagesDone && (
-              <CancelBookingButton
-                onConfirm={() => cancelBooking(myAppointment.id)}
-              />
+              <div className="mt-3">
+                <CancelBookingButton
+                  onConfirm={() => cancelBooking(myAppointment.id)}
+                />
+              </div>
+            )}
+
+            {/* Demo Simulation Helper (discrete, non-primary dev tool for single-screen testing) */}
+            {!allStagesDone && (
+              <details className="mt-4 rounded-lg border border-dashed border-stone-300 bg-white p-2.5 text-xs">
+                <summary className="cursor-pointer font-medium text-stone-500 select-none hover:text-stone-700">
+                  🛠️ {t("demoAdvanceCentreAction")}
+                </summary>
+                <div className="mt-2 space-y-2 border-t border-stone-100 pt-2">
+                  <p className="text-[11px] text-stone-500 leading-relaxed">
+                    {t("demoAdvanceCentreHint")}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => advanceAppointment(myAppointment.id)}
+                    className="min-h-8 w-full rounded-md bg-stone-800 px-3 text-xs font-medium text-white hover:bg-stone-700 active:bg-stone-900 transition-colors"
+                  >
+                    {t("nextStage")}: {myAppointment.tokenNumber}
+                  </button>
+                </div>
+              </details>
             )}
           </section>
         )}
@@ -439,7 +556,7 @@ export default function FarmerDashboard() {
       <button
         type="button"
         onClick={() => setSmsOpen(true)}
-        className="fixed bottom-4 right-4 z-30 min-h-12 rounded-full bg-gray-900 px-5 py-3 text-sm font-bold text-white shadow-xl hover:bg-gray-800 active:scale-95 transition-all"
+        className="fixed bottom-4 right-4 z-30 min-h-10 rounded-full bg-stone-900 px-4 py-2 text-xs font-semibold text-white shadow-lg ring-1 ring-stone-800 hover:bg-stone-800 active:scale-95 transition-all"
       >
         <span className="inline-flex items-center gap-2">
           <MessageSquareText className="h-4 w-4 text-emerald-400" />
@@ -461,6 +578,29 @@ export default function FarmerDashboard() {
         messages={smsOutbox}
       />
       <NetworkLoadSimulator />
+
+      {/* First-time onboarding modal */}
+      {isProfileReady && !profile && (
+        <FarmerProfileModal
+          isOpen={true}
+          isEdit={false}
+          initialName=""
+          initialVillage={selectedLocation.name}
+          onSave={handleSaveProfile}
+        />
+      )}
+
+      {/* Edit Profile modal */}
+      {isEditingProfile && (
+        <FarmerProfileModal
+          isOpen={true}
+          isEdit={true}
+          initialName={profile?.name || DEMO_FARMER_PROFILE.name}
+          initialVillage={profile?.village || selectedLocation.name}
+          onSave={handleSaveProfile}
+          onClose={() => setIsEditingProfile(false)}
+        />
+      )}
     </div>
   );
 }
@@ -487,14 +627,14 @@ function RequestForm({
   const { t } = useLanguage();
 
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-xs">
-      <h2 className="text-sm font-bold uppercase tracking-wider text-gray-600">
+    <section className="rounded-xl border border-stone-200/90 bg-white p-4 sm:p-5 shadow-2xs">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-stone-500">
         {t("yourRequest")}
       </h2>
-      <div className="mt-3 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-3.5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {/* Location selector */}
         <label className="block">
-          <span className="mb-1 block text-xs font-bold text-gray-700">
+          <span className="mb-1.5 block text-xs font-semibold text-stone-700">
             {t("selectLocation")}
           </span>
           <select
@@ -508,7 +648,7 @@ function RequestForm({
                 village: loc.name,
               });
             }}
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-semibold text-gray-900 disabled:bg-gray-100 shadow-2xs focus:border-emerald-600 focus:outline-hidden"
+            className="w-full rounded-lg border border-stone-200 bg-stone-50/50 px-3 py-2 text-sm font-medium text-stone-900 disabled:bg-stone-100 disabled:text-stone-400 shadow-2xs focus:bg-white focus:border-stone-400 focus:outline-hidden transition-colors"
           >
             {MOCK_LOCATIONS.map((loc) => (
               <option key={loc.id} value={loc.id}>
@@ -520,14 +660,14 @@ function RequestForm({
 
         {/* Crop selector */}
         <label className="block">
-          <span className="mb-1 block text-xs font-bold text-gray-700">
+          <span className="mb-1.5 block text-xs font-semibold text-stone-700">
             {t("crop")}
           </span>
           <select
             value={request.crop}
             disabled={disabled}
             onChange={(e) => onChange({ ...request, crop: e.target.value as Crop })}
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-semibold text-gray-900 disabled:bg-gray-100 shadow-2xs focus:border-emerald-600 focus:outline-hidden"
+            className="w-full rounded-lg border border-stone-200 bg-stone-50/50 px-3 py-2 text-sm font-medium text-stone-900 disabled:bg-stone-100 disabled:text-stone-400 shadow-2xs focus:bg-white focus:border-stone-400 focus:outline-hidden transition-colors"
           >
             {DEMO_CROPS.map((c) => (
               <option key={c} value={c}>
@@ -539,7 +679,7 @@ function RequestForm({
 
         {/* Quantity selector */}
         <label className="block">
-          <span className="mb-1 block text-xs font-bold text-gray-700">
+          <span className="mb-1.5 block text-xs font-semibold text-stone-700">
             {t("quantity")} ({t("quintals")})
           </span>
           <input
@@ -554,13 +694,13 @@ function RequestForm({
                 quantityQuintals: Math.max(1, Number(e.target.value) || 1),
               })
             }
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-semibold text-gray-900 disabled:bg-gray-100 shadow-2xs focus:border-emerald-600 focus:outline-hidden"
+            className="w-full rounded-lg border border-stone-200 bg-stone-50/50 px-3 py-2 text-sm font-medium text-stone-900 disabled:bg-stone-100 disabled:text-stone-400 shadow-2xs focus:bg-white focus:border-stone-400 focus:outline-hidden transition-colors"
           />
         </label>
 
         {/* Preferred time selector */}
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-gray-600">
+          <span className="mb-1.5 block text-xs font-semibold text-stone-700">
             {t("preferredTime")}
           </span>
           <select
@@ -569,7 +709,7 @@ function RequestForm({
             onChange={(e) =>
               onChange({ ...request, preferredTime: e.target.value as PreferredTime })
             }
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-semibold text-gray-900 disabled:bg-gray-100 shadow-2xs focus:border-emerald-600 focus:outline-hidden"
+            className="w-full rounded-lg border border-stone-200 bg-stone-50/50 px-3 py-2 text-sm font-medium text-stone-900 disabled:bg-stone-100 disabled:text-stone-400 shadow-2xs focus:bg-white focus:border-stone-400 focus:outline-hidden transition-colors"
           >
             <option value="morning">{t("morning")}</option>
             <option value="afternoon">{t("afternoon")}</option>
@@ -579,27 +719,27 @@ function RequestForm({
       </div>
 
       {resolvedLocation ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+        <div className="mt-3.5 flex flex-wrap items-center gap-2 rounded-lg border border-stone-200 bg-stone-50/80 px-3 py-2 text-xs font-medium text-stone-700">
           <span>📍 {resolvedLocation.name}, {resolvedLocation.district}, {resolvedLocation.state}</span>
-          <span className="rounded-md bg-emerald-200/60 px-1.5 py-0.5 font-mono text-[11px] text-emerald-900">
+          <span className="rounded bg-stone-200/80 px-1.5 py-0.5 font-mono text-[10px] text-stone-700">
             {resolvedLocation.latitude.toFixed(4)}° N, {resolvedLocation.longitude.toFixed(4)}° E
           </span>
         </div>
       ) : (
-        <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+        <div className="mt-3.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
           ⚠️ &ldquo;{request.village}&rdquo; not recognized. Select a supported town (e.g., Moodbidri, Belvai, Karkala, Mangaluru, Bengaluru, Kozhikode) to calculate real distance.
         </div>
       )}
 
       {isOffline && !disabled && (
-        <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-          <p className="font-bold">📡 {t("offlineStatus")}</p>
-          <p className="mt-0.5">{t("offlineSyncNotice")}</p>
+        <div className="mt-3.5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <p className="font-semibold">📡 {t("offlineStatus")}</p>
+          <p className="mt-0.5 text-stone-600">{t("offlineSyncNotice")}</p>
           {onSaveOffline && (
             <button
               type="button"
               onClick={onSaveOffline}
-              className="mt-2.5 min-h-10 w-full rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-amber-700"
+              className="mt-2.5 min-h-9 w-full rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-700"
             >
               💾 {t("saveOfflineBtn")}
             </button>
@@ -608,7 +748,7 @@ function RequestForm({
       )}
 
       {disabled && (
-        <p className="mt-2.5 text-xs font-bold text-emerald-700">
+        <p className="mt-2.5 text-xs font-semibold text-emerald-700">
           {t("alreadyBooked")} — {t("viewTracking")}
         </p>
       )}

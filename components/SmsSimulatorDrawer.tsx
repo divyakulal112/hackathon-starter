@@ -104,7 +104,7 @@ export default function SmsSimulatorDrawer({
         aria-label={t("smsTitle")}
       >
         {/* Header */}
-        <header className="flex items-center justify-between bg-emerald-700 px-4 py-3 text-white">
+        <header className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-3 text-stone-900">
           <h2 className="text-sm font-bold">
             {t("smsTitle")}
           </h2>
@@ -113,9 +113,9 @@ export default function SmsSimulatorDrawer({
             type="button"
             onClick={onClose}
             aria-label={t("close")}
-            className="rounded-lg p-1.5 hover:bg-emerald-800"
+            className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </header>
 

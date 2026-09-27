@@ -4,6 +4,7 @@
  */
 
 import type { AppointmentStatus } from "./types";
+import type { TranslationKey } from "./translations";
 
 // ---------------------------------------------------------------------------
 // Recommendation Configuration & Weights (Transparent, configurable)
@@ -116,6 +117,67 @@ export const CENTRE_STATUS_FLOW: AppointmentStatus[] = [
   "payment_initiated",
   "payment_received",
 ];
+
+export function stageKeyFor(status: AppointmentStatus): TranslationKey {
+  switch (status) {
+    case "slot_booked":
+      return "slotBooked";
+    case "arrived":
+      return "arrived";
+    case "weighed":
+      return "weighed";
+    case "quality_verified":
+      return "qualityVerified";
+    case "procurement_completed":
+      return "procurementCompleted";
+    case "payment_initiated":
+      return "paymentInitiated";
+    case "payment_received":
+      return "paymentReceived";
+    case "cancelled":
+      return "cancelled";
+  }
+}
+
+export function actionLabelForStatus(nextStatus: AppointmentStatus): TranslationKey {
+  switch (nextStatus) {
+    case "arrived":
+      return "markArrived";
+    case "weighed":
+      return "weighProduce";
+    case "quality_verified":
+      return "verifyQuality";
+    case "procurement_completed":
+      return "completeProcurement";
+    case "payment_initiated":
+      return "releasePayment";
+    case "payment_received":
+      return "paymentReceived";
+    default:
+      return "advance";
+  }
+}
+
+export function statusDescriptionKeyFor(status: AppointmentStatus): TranslationKey {
+  switch (status) {
+    case "slot_booked":
+      return "statusSlotBookedDesc";
+    case "arrived":
+      return "statusArrivedDesc";
+    case "weighed":
+      return "statusWeighedDesc";
+    case "quality_verified":
+      return "statusQualityVerifiedDesc";
+    case "procurement_completed":
+      return "statusProcurementCompletedDesc";
+    case "payment_initiated":
+      return "statusPaymentInitiatedDesc";
+    case "payment_received":
+      return "statusPaymentReceivedDesc";
+    case "cancelled":
+      return "cancelled";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // localStorage keys

@@ -57,6 +57,8 @@ export interface BookTokenInput {
   request: ProcurementRequest;
   arrivalWindow: string;
   modalPrice?: number | null;
+  farmerName?: string;
+  farmerVillage?: string;
 }
 
 interface AppStateContextValue {
@@ -318,12 +320,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         id: `apt-${token.toLowerCase()}-${Date.now()}`,
         tokenNumber: token,
         farmerId: DEMO_FARMER.id,
-        farmerName: DEMO_FARMER.name,
+        farmerName: input.farmerName?.trim() || DEMO_FARMER.name,
         centreId: centre.id,
         centreName: centre.name,
         crop: input.request.crop,
         quantityQuintals: input.request.quantityQuintals,
-        village: DEMO_FARMER.village,
+        village: input.farmerVillage?.trim() || input.request.village || DEMO_FARMER.village,
         arrivalWindow: input.arrivalWindow,
         bookedAt: new Date().toISOString(),
         status: "slot_booked",

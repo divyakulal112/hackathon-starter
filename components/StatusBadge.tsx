@@ -4,13 +4,13 @@ import type { TranslationKey } from "@/lib/translations";
 type BadgeVariant = "optimal" | "busy" | "congested" | "neutral" | "good" | "warn" | "bad";
 
 const VARIANT_STYLES: Record<BadgeVariant, string> = {
-  optimal: "bg-emerald-100 text-emerald-800 border-emerald-300",
-  good: "bg-emerald-100 text-emerald-800 border-emerald-300",
-  busy: "bg-amber-100 text-amber-800 border-amber-300",
-  warn: "bg-amber-100 text-amber-800 border-amber-300",
-  congested: "bg-red-100 text-red-800 border-red-300",
-  bad: "bg-red-100 text-red-800 border-red-300",
-  neutral: "bg-gray-100 text-gray-700 border-gray-300",
+  optimal: "bg-emerald-50 text-emerald-700 border-emerald-200/80",
+  good: "bg-emerald-50 text-emerald-700 border-emerald-200/80",
+  busy: "bg-amber-50 text-amber-700 border-amber-200/80",
+  warn: "bg-amber-50 text-amber-700 border-amber-200/80",
+  congested: "bg-rose-50 text-rose-700 border-rose-200/80",
+  bad: "bg-rose-50 text-rose-700 border-rose-200/80",
+  neutral: "bg-stone-50 text-stone-600 border-stone-200/80",
 };
 
 const VARIANT_KEY: Record<string, TranslationKey> = {
@@ -32,7 +32,7 @@ export default function StatusBadge({
     label ?? (VARIANT_KEY[variant] ? t(VARIANT_KEY[variant]) : variant);
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${VARIANT_STYLES[variant]}`}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${VARIANT_STYLES[variant]}`}
     >
       {text}
     </span>

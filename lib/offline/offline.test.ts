@@ -22,9 +22,11 @@ const MOCK_CENTRE: Centre = {
   capacityPerDay: 50,
   bookedToday: 10,
   queueCount: 4,
-  avgProcessingMinutes: 20,
+  processingRatePerHour: 12,
   eligibleCrops: ["Paddy / Rice", "Arecanut", "Maize"],
   distanceKm: 8,
+  opensAt: "06:00",
+  closesAt: "18:00",
 };
 
 describe("Offline-First Connectivity Layer", () => {

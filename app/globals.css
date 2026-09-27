@@ -5,8 +5,8 @@
 @source "../app";
 
 :root {
-  --background: #f6f8f4;
-  --foreground: #14261a;
+  --background: #fafaf9;
+  --foreground: #1c1917;
 }
 
 html {
@@ -28,5 +28,5 @@ input {
 }
 
 ::selection {
-  background: #05966933;
+  background: #05966922;
 }
